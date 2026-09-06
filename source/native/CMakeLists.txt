@@ -21,6 +21,7 @@ set(MFG_UNLOCK_CORE_SOURCES
     entry_detour.asm
     nvidia_mfg_policy.cpp
     temporal_interval_trace.cpp
+    ampere_fp8_emulator.cpp
     v1_2_core.rc
 )
 

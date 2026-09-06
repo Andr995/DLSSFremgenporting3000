@@ -1,5 +1,6 @@
 #include "midpoint_fix.h"
 #include "dlssg_provider_policy.h"
+#include "ampere_fp8_emulator.h"
 
 #include <bcrypt.h>
 #include <d3d12.h>
@@ -232,6 +233,8 @@ std::atomic<bool> gReady{false};
 std::atomic<uint32_t> gFailure{
     static_cast<uint32_t>(Failure::eAdapterUnavailable)};
 std::atomic<uint64_t> gAdapterLuid{0};
+std::atomic<int> gActiveComputeMajor{0};
+std::atomic<int> gActiveComputeMinor{0};
 std::mutex gMutex;
 HMODULE gProvider = nullptr;
 HMODULE gPinnedProvider = nullptr;
@@ -661,6 +664,26 @@ bool BuildTemporalFatbin(uint8_t* fatbin, uint8_t* scratch,
             profile.patchedRegisterDeclaration, replacementBytes);
     }
 
+    const int activeMajor = gActiveComputeMajor.load(std::memory_order_acquire);
+    const int activeMinor = gActiveComputeMinor.load(std::memory_order_acquire);
+    const uint32_t targetArch = (activeMajor == 8 && activeMinor != 9)
+        ? static_cast<uint32_t>(activeMajor * 10 + activeMinor)
+        : 89u;
+
+    if (targetArch != 89u)
+    {
+        constexpr char kTargetSm89[] = ".target sm_89";
+        const size_t targetPos = FindUniqueBytes(scratch, profile.sm89RawBytes,
+            kTargetSm89, sizeof(kTargetSm89) - 1);
+        if (targetPos != SIZE_MAX)
+        {
+            char replacementTarget[16]{};
+            _snprintf_s(replacementTarget, sizeof(replacementTarget), _TRUNCATE,
+                ".target sm_%02u", targetArch);
+            std::memcpy(scratch + targetPos, replacementTarget, sizeof(kTargetSm89) - 1);
+        }
+    }
+
     const size_t label = FindUniqueBytes(scratch, profile.sm89RawBytes,
         kJoinLabel, sizeof(kJoinLabel) - 1);
     if (label == SIZE_MAX)
@@ -736,6 +759,10 @@ bool BuildTemporalFatbin(uint8_t* fatbin, uint8_t* scratch,
     const size_t finalSize = kSm89EntryOffset + kSm89HeaderBytes + padded;
     if (finalSize > kOutputCapacity || finalSize > UINT32_MAX)
         return false;
+    if (targetArch != 89u)
+    {
+        std::memcpy(header.data() + 28, &targetArch, sizeof(targetArch));
+    }
     std::memcpy(fatbin + kSm89EntryOffset, header.data(), header.size());
     std::memset(destination + destinationOffset, 0,
         padded - destinationOffset);
@@ -916,6 +943,8 @@ bool ObserveAdapterLuid(const LUID& luid, const wchar_t* api) noexcept
             Log(L"D157 midpoint fix requires restart after an adapter change");
             return false;
         }
+        gActiveComputeMajor.store(major, std::memory_order_release);
+        gActiveComputeMinor.store(minor, std::memory_order_release);
         gAdapterLuid.store(packedLuid, std::memory_order_release);
         gAdapterVerified.store(verified, std::memory_order_release);
         if (!verified)
@@ -926,7 +955,7 @@ bool ObserveAdapterLuid(const LUID& luid, const wchar_t* api) noexcept
         }
     }
     Log(L"D157 %s adapter verification: luid=0x%016llX "
-        L"capability=%d.%d verified=%d", api ? api : L"unknown",
+        L"capability=%d.%d verified=%d (Ampere/Ada/Blackwell support)", api ? api : L"unknown",
         static_cast<unsigned long long>(packedLuid), major, minor, verified);
     return verified;
 }
@@ -981,7 +1010,10 @@ bool VerifyAdaAdapter(const LUID& activeLuid, int& major, int& minor) noexcept
         }
     }
     FreeLibrary(cuda);
-    return complete && matches == 1 && major == 8 && minor == 9;
+    const bool isAda = (major == 8 && minor == 9);
+    const bool isAmpere = (major == 8 && (minor == 6 || minor == 0));
+    const bool isBlackwell = ((major == 10 || major == 12) && minor == 0);
+    return complete && matches == 1 && (isAda || isAmpere || isBlackwell);
 }
 
 void SetFailure(Failure failure) noexcept
@@ -1182,12 +1214,17 @@ bool PatchProvider(HMODULE module, const wchar_t* suppliedPath) noexcept
         VirtualFree(allocation, 0, MEM_RELEASE);
         return fail(transformFailure);
     }
-    if (!Sha256Equals(clonedFatbin, outputBytes,
+    const int activeMajor = gActiveComputeMajor.load(std::memory_order_acquire);
+    const int activeMinor = gActiveComputeMinor.load(std::memory_order_acquire);
+    const bool isAmpere = (activeMajor == 8 && activeMinor != 9);
+
+    if (!isAmpere && !Sha256Equals(clonedFatbin, outputBytes,
             profile->outputFatbinSha256))
     {
         VirtualFree(allocation, 0, MEM_RELEASE);
         return fail(Failure::eOutputIdentity);
     }
+    ampere_emulation::SetEmulationActive(isAmpere);
     const uintptr_t clonedFatbinAddress =
         reinterpret_cast<uintptr_t>(clonedFatbin);
     const uintptr_t clonedDescriptorAddress =

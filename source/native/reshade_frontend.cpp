@@ -1971,6 +1971,8 @@ void DrawSettings(reshade::api::effect_runtime* runtime)
     ImGui::Text("Midpoint outputs: raw %u | unique %u",
         gNativeMidpoint.rawCount,
         gNativeMidpoint.uniqueOutputs);
+    ImGui::Text("Ampere FP8->FP16 Bridge: %s",
+        gNativeMidpoint.backportEnabled ? "Active (Emulation)" : "Off");
 #endif
 
     ImGui::Separator();
@@ -2098,16 +2100,16 @@ extern "C" __declspec(dllexport) const char* AUTHOR = "dashdogy";
 
 #if defined(MFG_UNLOCK_RESHADE_UI_CLIENT)
 extern "C" __declspec(dllexport) const char* NAME =
-    "Universal RTX 40 MFG Unlock V1.2";
+    "Universal RTX 30/40 MFG Unlock V1.2";
 extern "C" __declspec(dllexport) const char* DESCRIPTION =
     "Universal DLSS Multi Frame Generation enabler for supported games on "
-    "NVIDIA GeForce RTX 40 Series GPUs.";
+    "NVIDIA GeForce RTX 30 and 40 Series GPUs.";
 #else
 extern "C" __declspec(dllexport) const char* NAME =
     "DLSS MFG Unlock - ReShade Early Load";
 extern "C" __declspec(dllexport) const char* DESCRIPTION =
     "Universal DLSS Multi Frame Generation enabler for supported games on "
-    "NVIDIA GeForce RTX 40 Series GPUs.";
+    "NVIDIA GeForce RTX 30 and 40 Series GPUs.";
 #endif
 
 extern "C" __declspec(dllexport) bool AddonInit(

@@ -2,4 +2,6 @@
 /build-tests/
 /outputs/
 /test_runs/
+/deps/
+/dist/
 **/bridge_status.json
