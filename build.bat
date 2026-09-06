@@ -33,11 +33,9 @@ if not exist "Streamline" (
 if not exist "reshade" (
     echo [*] Cloning ReShade SDK...
     git clone --depth 1 --branch v6.8.0 https://github.com/crosire/reshade.git
-)
-
-if not exist "imgui" (
-    echo [*] Cloning Dear ImGui...
-    git clone --depth 1 --branch v1.91.5 https://github.com/ocornut/imgui.git
+    cd reshade
+    git submodule update --init --depth 1 deps/imgui
+    cd ..
 )
 
 cd ..
@@ -47,7 +45,7 @@ cmake -B build -S source/native -G Ninja ^
     -DCMAKE_BUILD_TYPE=Release ^
     -DSTREAMLINE_ROOT="%CD%/deps/Streamline" ^
     -DRESHADE_ROOT="%CD%/deps/reshade" ^
-    -DIMGUI_ROOT="%CD%/deps/imgui" ^
+    -DIMGUI_ROOT="%CD%/deps/reshade/deps/imgui" ^
     -DMFG_UNLOCK_BUILD_UNIVERSAL_UI=ON
 
 if %ERRORLEVEL% NEQ 0 (

@@ -30,7 +30,8 @@ jobs:
           cd deps
           git clone --depth 1 https://github.com/NVIDIAGameWorks/Streamline.git
           git clone --depth 1 --branch v6.8.0 https://github.com/crosire/reshade.git
-          git clone --depth 1 --branch v1.91.5 https://github.com/ocornut/imgui.git
+          cd reshade
+          git submodule update --init --depth 1 deps/imgui
 
       - name: Configure CMake
         shell: pwsh
@@ -39,7 +40,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release `
             -DSTREAMLINE_ROOT="${{ github.workspace }}/deps/Streamline" `
             -DRESHADE_ROOT="${{ github.workspace }}/deps/reshade" `
-            -DIMGUI_ROOT="${{ github.workspace }}/deps/imgui" `
+            -DIMGUI_ROOT="${{ github.workspace }}/deps/reshade/deps/imgui" `
             -DMFG_UNLOCK_BUILD_UNIVERSAL_UI=ON
 
       - name: Build
