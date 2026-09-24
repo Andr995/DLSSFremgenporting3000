@@ -1,97 +1,104 @@
-# Universal RTX 30 & 40 MFG Unlocker
+# NVIDIA Frame Generation su RTX 3000 — Cyberpunk 2077
 
-Universal DLSS Multi Frame Generation enabler and experimental Ampere bridge for supported Windows x64 games on **NVIDIA GeForce RTX 30 Series (Ampere)** and **RTX 40 Series (Ada Lovelace)** GPUs. 
+Pacchetto di installazione per usare **[dlssg_for_sm86 di sdli1995](https://github.com/sdli1995/dlssg_for_sm86)** con NVIDIA DLSS Frame Generation sulle GPU Ampere SM 8.6. La verifica locale è stata eseguita su **RTX 3060 Ti** in Cyberpunk 2077. La generazione usa il runtime NVIDIA DLSS-G; FSR non è il backend di questo pacchetto.
 
-Adds Follow game, fixed 2X through the verified maximum (up to 6X), and Dynamic controls to games that already provide Streamline DLSS Frame Generation.
+**La DLL Ampere è già compilata.** La release contiene `version.dll`, configurazione e script di installazione/ripristino. Non servono Visual Studio o CUDA Toolkit. La DLL è distribuita dall'autore del backend, non è una compilazione del vecchio core C++ di questo repository.
 
-The same build supports DirectX 12 and Vulkan. It combines NVIDIA's listed maximum for each game with the active Streamline wrapper capacity, exposing up to 6X when both allow it and falling back to a supported lower maximum. It does not add DLSS Frame Generation to games that do not already support it.
+> Mod sperimentale della comunità. Le prove confermano l'esecuzione su RTX 3060 Ti; non garantiscono compatibilità con ogni RTX 3000, gioco o driver, né supporto ufficiale NVIDIA.
 
-> [!WARNING]
-> This is unsupported research software. Multi-frame generation and the experimental Ampere (RTX 30 Series) FP8 $\to$ FP16 software emulation bridge are experimental and may cause visual artifacts, frame pacing variance, or crashes depending on the game engine and driver version.
+## Download
 
----
+Scarica **`NVIDIA-FG-RTX3000-Cyberpunk-0.3.5.zip`** dalla [pagina Releases](https://github.com/Andr995/DLSSFremgenporting3000/releases) ed estrailo in una cartella dedicata. Gli archivi automatici “Source code” richiedono invece il passaggio di preparazione descritto sotto. Se il repository è privato, serve un account autorizzato anche per scaricare le release.
 
-## Features & RTX 30 Series Porting
+## Installazione della release già compilata
 
-1. **Universal Build:** Supports DirectX 12 and Vulkan games under a single binary set.
-2. **RTX 30 Series (Ampere) Support:**
-   - **Extended GPU Detection:** Accepts Compute Capability 8.6 and 8.0 (`VerifyAdaAdapter` extended for Ampere chips like GA102, GA104, GA106, GA100).
-   - **Dynamic Fatbin & PTX Retargeting:** Intercepts the temporal intermediate scatter kernel fatbin and rewrites `.target sm_89` to `.target sm_86`, updating the architecture header in real time for CUDA JIT execution.
-   - **FP8 $\to$ FP16 Software Emulation Bridge:** Software emulation layer (`ampere_fp8_emulator`) providing branchless LUT conversions for `E4M3` and `E5M2` FP8 tensors and matrix multiply-accumulate (MMA) tile emulation for hardware lacking native 4th-gen Tensor Core instructions.
-3. **Live ReShade Controls:** Live fixed and Dynamic multiplier selection in the in-game ReShade overlay with real-time pipeline telemetry.
-4. **Ada Temporal Correction:** Patches the hardcoded $t = 0.5f$ midpoint bias in DLSS-G to support arbitrary temporal positions for 3X, 4X, and 6X multipliers.
+1. **Chiudi completamente Cyberpunk 2077.**
+2. Individua `Cyberpunk2077.exe`, normalmente in `Cyberpunk 2077\bin\x64`. La cartella di GOG Galaxy contiene il launcher e può essere diversa.
+3. Apri PowerShell nella cartella estratta ed esegui, sostituendo il percorso del gioco:
 
----
+   ```powershell
+   .\scripts\install-ampere.ps1 -Package . -GameExecutable 'D:\Giochi\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe'
+   ```
 
-## Installation
+4. Conserva il percorso `restore.json` stampato: serve per annullare questa installazione.
+5. Avvia il gioco e seleziona **Impostazioni → Grafica → Generazione fotogrammi → DLSS Frame Generation**. Applica, esci normalmente e **riavvia il gioco** quando richiesto.
+6. Inizia con **2×**, mantieni NVIDIA Reflex attivo ed esegui il benchmark. Poi puoi provare **3× o 4×**.
 
-Requires Windows x64, an **NVIDIA GeForce RTX 30 or 40 Series GPU**, a game with working Streamline DLSS Frame Generation, [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader), and [ReShade](https://reshade.me/) with add-on support.
+Lo script verifica revisione e hash prima di installare `version.dll` e `dlssg_sm86.ini`. Sposta in `.rtx30fg-backup-<id>` i file concorrenti riconosciuti: un precedente `version.dll`/INI, `nvngx.dll`, `dlssg_to_fsr3_amd_is_better.dll` e i tre componenti `RTX40MFG`. Conserva ReShade e i runtime originali `nvngx_dlss*.dll`. Gestisce soltanto Cyberpunk; altre mod che usano questi proxy richiedono una verifica separata.
 
-Copy these compiled files beside the game's main executable:
+Se la cartella del gioco richiede privilegi amministrativi, apri PowerShell come amministratore. Se gli script scaricati sono bloccati, dopo aver verificato origine e hash puoi eseguire il solo comando in una sessione temporanea:
 
-```text
-RTX40MFGCore.dll
-RTX40MFG.asi
-RTX40MFG-UI.addon64
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-ampere.ps1 -Package . -GameExecutable 'D:\Giochi\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe'
 ```
 
-Install Ultimate ASI Loader under a supported proxy name that the game loads early (such as `dinput8.dll` or `version.dll`). Merge any supplied `global.ini` values into the matching loader configuration file (`dinput8.ini` or `version.ini`).
+### Installazione manuale
 
-### DirectX 12
-Install ReShade for DirectX 10/11/12 (which usually creates `dxgi.dll`). Install Ultimate ASI Loader under a different proxy name (commonly `dinput8.dll` or `version.dll`). Never install both loaders under the same filename.
+A gioco chiuso, conserva una copia degli originali e sposta fuori da `bin\x64` le mod concorrenti elencate sopra. Copia **`version.dll` e `dlssg_sm86.ini`** dalla release accanto all'eseguibile, poi seleziona DLSS Frame Generation e riavvia. Questa procedura richiede anche un ripristino manuale; lo script è preferibile perché registra e verifica il backup.
 
-### Vulkan
-Select Vulkan in the ReShade installer. Use Ultimate ASI Loader under an early proxy name that the Vulkan executable imports (such as `dinput8.dll`, `version.dll`, or `winmm.dll`).
+## Risultati verificati
 
----
+RTX 3060 Ti, Ryzen 5 5600X, driver 616.56, Cyberpunk **2.3**, 1920×1080, DLSS Qualità con modello Transformer, Ray Reconstruction e ray tracing attivi, illuminazione Folle, path tracing disattivato. Le impostazioni riportate dai tre rapporti coincidono, salvo FG e misure del benchmark.
 
-## Usage
+| Modalità | FPS medi | Minimo | Massimo |
+| --- | ---: | ---: | ---: |
+| FG disattivato | 44,96 | 40,19 | 49,24 |
+| NVIDIA DLSS FG 2× | 77,33 | 60,63 | 88,02 |
+| NVIDIA DLSS FG 4× | 120,01 | 32,58 | 138,84 |
 
-1. Launch the game and press the **Home** key to open the ReShade menu.
-2. Navigate to the **DLSS MFG** tab.
-3. Choose **Follow game**, a fixed multiplier (2X, 3X, 4X, 6X), or **Dynamic**.
-4. The panel displays output FPS and the active status of the `Ampere FP8->FP16 Bridge`.
+Guadagno medio: circa **+72% a 2×** e **+167% a 4×**. Il minimo della prova 4× mostra un calo: la media non certifica fluidità costante. Sono FPS riportati dal gioco, non misure indipendenti di latenza o unicità dei frame presentati; il minimo non equivale al valore 1% low.
 
----
+I log della sessione corrispondente registrano creazione riuscita della feature DLSS-G, kernel `cubin_sm86`, valutazioni riuscite e zero errori di lancio nei campioni. Una prova successiva su **2.31** riporta 114,71 FPS medi a 4× ed è documentata separatamente perché cambia la versione del gioco.
 
-## Troubleshooting
+Dettagli e dati: [verifica locale](VALIDAZIONE_CYBERPUNK.md), [rapporti benchmark](evidence/cyberpunk-benchmarks.json), [riepilogo dei log](evidence/cyberpunk-backend-summary.json).
 
-### Frozen image or black screen above 2x
-1. Close the game.
-2. Open the game's profile in the **NVIDIA App**. Under **DLSS Override - Model Presets**, set **Frame Generation** to **Preset B** and apply.
-3. Restart the game and test the desired multiplier.
+## Configurazione e problemi comuni
 
-### ReShade status flicker
-Try renaming the Ultimate ASI Loader proxy to `dinput8.dll` if `version.dll` causes UI overlay flicker.
+- `Optimized=0`: percorso numerico stock del backend Ampere, usato nelle prove iniziali.
+- `MaxGeneratedFrames=3`: limite richiesto fino a tre frame aggiuntivi, cioè 4×. Seleziona il moltiplicatore nel gioco e verifica quello effettivo nei log.
+- Log: `bin\x64\dlssg_sm86\logs\loader_<PID>.jsonl` e `backend_<PID>.jsonl`.
+- Il menu sbloccato o una riga `install` non provano l'esecuzione. Cerca anche una creazione riuscita della feature ID 11 e successive righe `evaluate` riuscite sul dispositivo SM86.
+- Se il benchmark indica **“Generazione fotogrammi: No”**, seleziona DLSS dal menu, applica ed esci normalmente prima del riavvio. Il valore salvato da questa versione del gioco è `DLSS`, non `DLSSG`.
+- Per questa integrazione usa **2×–4×**. Non forzare 6× con il vecchio plugin Streamline del gioco.
 
----
+Guida estesa: [TUTORIAL_RTX3000.md](TUTORIAL_RTX3000.md).
 
-## Automated CI & Local Build
+## Ripristino
 
-### Automated Build (GitHub Actions)
-A pre-configured GitHub Actions workflow is included at [`.github/workflows/build.yml`](.github/workflows/build.yml). Pushing to your repository automatically builds:
-- `RTX40MFGCore.dll`
-- `RTX40MFG.asi`
-- `RTX40MFG-UI.addon64`
+Chiudi il gioco, poi dalla cartella della release esegui usando il manifest stampato dalla tua installazione:
 
-Download the resulting ZIP archive directly from the **Actions $\to$ Artifacts** tab.
+```powershell
+.\scripts\restore-ampere.ps1 -Manifest 'D:\Giochi\Cyberpunk 2077\bin\x64\.rtx30fg-backup-INSERISCI_ID\restore.json'
+```
 
-### Local Build (Windows)
-Requires Visual Studio 2022 with Desktop C++ workload and MASM (`ml64.exe`):
-Run [`build.bat`](build.bat) from the project root. The script automatically fetches dependencies (Streamline SDK, ReShade, ImGui) and outputs compiled binaries to the `dist/` folder.
+Il ripristino controlla gli hash e conserva anche i file rimossi. Se hai modificato l'INI o il backup, si ferma per non sovrascrivere i cambiamenti. Le impostazioni grafiche si gestiscono separatamente dal menu del gioco.
 
----
+## Preparare il pacchetto dal repository
 
-## How It Works
+Apri PowerShell nella cartella clonata o estratta dai sorgenti:
 
-`RTX40MFG.asi` imports `RTX40MFGCore.dll`, ensuring early injection before the main game creates its first DLSS pipeline. The core hooks Streamline (`sl.dlss_g.dll`) and NGX (`nvngx_dlssg.dll`), un-clamps the requested frame capacity, adjusts the CUDA fatbin headers and PTX code for the detected GPU architecture, and runs the software emulation bridge when executing on Ampere GPUs.
+```powershell
+$pacchetto = .\scripts\prepare-ampere.ps1
+.\tests\ampere_deployment_tests.ps1 -Package $pacchetto
+.\scripts\install-ampere.ps1 -Package $pacchetto -GameExecutable 'D:\Giochi\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe'
+```
 
-Logs are written to:
-- `%TEMP%\MfgUnlock-<PID>.log`
-- `%TEMP%\MfgUnlock-intervals-<PID>.csv`
+`prepare-ampere.ps1` scarica la **DLL già compilata** dalla revisione fissata dell'autore, verifica dimensione e SHA-256 e prepara una nuova directory in `dist`. Richiede Internet al primo download, non un compilatore. I test usano file fittizi e vanno eseguiti a gioco chiuso.
 
----
+Backend **0.3.5**, commit `9621db573e07ed54f50c15bbb585ed9a7bdfac28`. SHA-256 di `version.dll`:
 
-## License
+```text
+C3934A09399F022504227C72DF0BF8C0DE55F9A08880DDDDE898C5262CEFA838
+```
 
-Original code in this repository is licensed under the [MIT License](LICENSE). NVIDIA Streamline, NGX, ReShade, and MinHook remain subject to their respective licenses.
+## Codice C++ e correzioni
+
+Il core C++ Ada storico è separato e non va caricato insieme al backend Ampere. Le tre correzioni di revisione riguardano durata della DLL, percorsi condivisi fra core e interfaccia e rifiuto della telemetria scaduta o di altre sessioni. I sei test locali sono passati; il core completo richiede MSVC/MASM e non è la DLL Ampere della release.
+
+Istruzioni per sviluppatori: [ADA_RESEARCH.md](ADA_RESEARCH.md). Revisione tecnica: [AUDIT.md](AUDIT.md).
+
+## Provenienza e licenze
+
+Il codice originario conserva la [licenza MIT](LICENSE). Il backend esterno è di **sdli1995**, che dichiara GPLv3 per il proprio codice. Runtime NVIDIA, modelli e kernel di terze parti mantengono le rispettive condizioni e non sono rilicenziati dalla MIT di questo repository. Il pacchetto conserva integralmente `THIRD_PARTY_NOTICES.txt` dell'autore e [BACKEND_PROVENANCE.md](BACKEND_PROVENANCE.md).
+
+La revisione upstream consultata pubblica binari e documentazione, ma non tutti i sorgenti necessari a ricostruire la DLL. L'hash identifica il file e non equivale a un audit completo. La firma del backend è autofirmata dall'autore, non è una firma NVIDIA.

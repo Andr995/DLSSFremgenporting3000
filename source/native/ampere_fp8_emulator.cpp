@@ -1,184 +1,152 @@
 #include "ampere_fp8_emulator.h"
 
-#include <cmath>
-#include <cstring>
 #include <array>
+#include <atomic>
+#include <cmath>
+#include <limits>
 
 namespace ampere_emulation
 {
 namespace
 {
-std::atomic<bool> gEmulationActive{false};
-std::atomic<uint64_t> gEmulatedOperationCount{0};
+std::atomic<uint64_t> gReferenceOperationCount{0};
 
-// Pre-computed lookup tables for fast branchless conversion of 8-bit floats to 16-bit half floats
+constexpr uint16_t Decode(uint8_t value, Fp8Format format) noexcept
+{
+    const uint16_t sign = static_cast<uint16_t>((value & 0x80u) << 8);
+    const unsigned magnitude = value & 0x7fu;
+    if (format == Fp8Format::eE5M2)
+    {
+        // Exponent bias is identical; preserve infinities and quiet any NaN.
+        const uint16_t bits = static_cast<uint16_t>(magnitude << 8);
+        return static_cast<uint16_t>(sign | bits | (magnitude > 0x7cu ? 0x0200u : 0u));
+    }
+    if (magnitude == 0x7fu)
+        return static_cast<uint16_t>(sign | 0x7e00u); // E4M3FN has NaNs, but no infinities.
+    unsigned exponent = magnitude >> 3;
+    unsigned mantissa = magnitude & 7u;
+    if (exponent != 0)
+        return static_cast<uint16_t>(sign | ((exponent + 8u) << 10)
+            | (mantissa << 7));
+    if (mantissa == 0)
+        return sign;
+    exponent = 9;
+    while (mantissa < 8u)
+    {
+        mantissa <<= 1;
+        --exponent;
+    }
+    return static_cast<uint16_t>(sign | (exponent << 10)
+        | ((mantissa - 8u) << 7));
+}
+
+float HalfToFloat(uint16_t bits) noexcept
+{
+    const unsigned exponent = (bits >> 10) & 31u;
+    const unsigned mantissa = bits & 1023u;
+    float magnitude = exponent == 0 ? std::ldexp(static_cast<float>(mantissa), -24)
+        : exponent == 31 ? (mantissa ? std::numeric_limits<float>::quiet_NaN()
+                                    : std::numeric_limits<float>::infinity())
+        : std::ldexp(static_cast<float>(1024u + mantissa),
+            static_cast<int>(exponent) - 25);
+    return bits & 0x8000u ? -magnitude : magnitude;
+}
+
 struct ConversionTables
 {
-    std::array<uint16_t, 256> e4m3ToFp16{};
-    std::array<uint16_t, 256> e5m2ToFp16{};
-    std::array<float, 256> e4m3ToFp32{};
-
+    std::array<uint16_t, 256> e4m3{};
+    std::array<uint16_t, 256> e5m2{};
+    std::array<float, 256> e4m3Float{};
     ConversionTables() noexcept
     {
-        for (uint32_t i = 0; i < 256; ++i)
+        for (unsigned i = 0; i < 256; ++i)
         {
-            const uint8_t byte = static_cast<uint8_t>(i);
-
-            // Compute E4M3 -> float -> FP16
-            // E4M3: sign(1), exponent(4, bias 7), mantissa(3)
-            const uint32_t sign = (byte >> 7) & 0x1;
-            const uint32_t exp = (byte >> 3) & 0xF;
-            const uint32_t mant = byte & 0x7;
-
-            float valF32 = 0.0f;
-            if (exp == 0)
-            {
-                // Subnormal
-                valF32 = std::ldexp(static_cast<float>(mant) / 8.0f, -6);
-            }
-            else if (exp == 15 && mant == 7)
-            {
-                // NaN
-                valF32 = NAN;
-            }
-            else
-            {
-                // Normalized
-                valF32 = std::ldexp(1.0f + static_cast<float>(mant) / 8.0f, static_cast<int>(exp) - 7);
-            }
-            if (sign) valF32 = -valF32;
-            e4m3ToFp32[i] = valF32;
-
-            // Simple float to FP16 bitcast approximation
-            uint32_t f32Bits = 0;
-            std::memcpy(&f32Bits, &valF32, sizeof(f32Bits));
-            const uint16_t f16Sign = static_cast<uint16_t>((f32Bits >> 16) & 0x8000);
-            int32_t f16Exp = static_cast<int32_t>(((f32Bits >> 23) & 0xFF) - 127 + 15);
-            uint32_t f16Mant = (f32Bits >> 13) & 0x3FF;
-
-            if (f16Exp <= 0)
-            {
-                e4m3ToFp16[i] = f16Sign;
-            }
-            else if (f16Exp >= 31)
-            {
-                e4m3ToFp16[i] = f16Sign | 0x7C00;
-            }
-            else
-            {
-                e4m3ToFp16[i] = static_cast<uint16_t>(f16Sign | (f16Exp << 10) | f16Mant);
-            }
-
-            // Compute E5M2 -> FP16
-            // E5M2: sign(1), exponent(5, bias 15), mantissa(2)
-            // Exponent bias is identical to FP16 (15)! Mantissa simply shifts up by 8 bits
-            const uint16_t signBit = static_cast<uint16_t>((byte & 0x80) << 8);
-            const uint16_t expBits = static_cast<uint16_t>((byte & 0x7C) << 8);
-            const uint16_t mantBits = static_cast<uint16_t>((byte & 0x03) << 8);
-            e5m2ToFp16[i] = signBit | expBits | mantBits;
+            e4m3[i] = Decode(static_cast<uint8_t>(i), Fp8Format::eE4M3);
+            e5m2[i] = Decode(static_cast<uint8_t>(i), Fp8Format::eE5M2);
+            e4m3Float[i] = HalfToFloat(e4m3[i]);
         }
     }
 };
 
-const ConversionTables gTables;
+const ConversionTables& Tables() noexcept
+{
+    // Safe even when called from another translation unit's static initializer.
+    static const ConversionTables tables;
+    return tables;
+}
 }
 
-uint16_t ConvertFp8ToFp16(uint8_t fp8Value, Fp8Format format) noexcept
+uint16_t ConvertFp8ToFp16(uint8_t value, Fp8Format format) noexcept
 {
-    return (format == Fp8Format::eE4M3)
-        ? gTables.e4m3ToFp16[fp8Value]
-        : gTables.e5m2ToFp16[fp8Value];
+    return Decode(value, format);
 }
 
-uint8_t ConvertFp16ToFp8(uint16_t fp16Value, Fp8Format format) noexcept
+uint8_t ConvertFp16ToFp8(uint16_t value, Fp8Format format) noexcept
 {
-    const uint32_t sign = (fp16Value >> 15) & 0x1;
-    const int32_t exp = (fp16Value >> 10) & 0x1F;
-    const uint32_t mant = fp16Value & 0x3FF;
-
-    if (format == Fp8Format::eE5M2)
+    const uint8_t sign = static_cast<uint8_t>((value >> 8) & 0x80u);
+    const uint16_t magnitude = value & 0x7fffu;
+    const bool e5m2 = format == Fp8Format::eE5M2;
+    const unsigned maximum = e5m2 ? 0x7bu : 0x7eu;
+    if (magnitude > 0x7c00u)
+        return static_cast<uint8_t>(sign | 0x7fu);
+    if (magnitude == 0x7c00u && e5m2)
+        return static_cast<uint8_t>(sign | 0x7cu);
+    const auto& table = e5m2 ? Tables().e5m2 : Tables().e4m3;
+    if (magnitude >= table[maximum])
+        return static_cast<uint8_t>(sign | maximum);
+    // Positive finite half bit patterns are ordered numerically. Find the
+    // bounding FP8 values, then round to nearest, ties to even (including zero).
+    unsigned low = 0;
+    unsigned high = maximum;
+    while (high - low > 1)
     {
-        // Direct conversion: truncate 10-bit mantissa to 2 bits
-        return static_cast<uint8_t>((sign << 7) | ((exp & 0x1F) << 2) | ((mant >> 8) & 0x3));
+        const unsigned middle = (low + high) / 2;
+        if (table[middle] <= magnitude)
+            low = middle;
+        else
+            high = middle;
     }
-    else
-    {
-        // E4M3 conversion (bias 7 vs bias 15): exp - 15 + 7 = exp - 8
-        int32_t e4m3Exp = exp - 8;
-        if (e4m3Exp < 0) e4m3Exp = 0;
-        if (e4m3Exp > 15) e4m3Exp = 15;
-        const uint32_t e4m3Mant = (mant >> 7) & 0x7;
-        return static_cast<uint8_t>((sign << 7) | ((e4m3Exp & 0xF) << 3) | e4m3Mant);
-    }
+    const float input = HalfToFloat(magnitude);
+    const float lowerDistance = input - HalfToFloat(table[low]);
+    const float upperDistance = HalfToFloat(table[high]) - input;
+    const unsigned rounded = lowerDistance < upperDistance ? low
+        : upperDistance < lowerDistance ? high : (low & 1u) ? high : low;
+    return static_cast<uint8_t>(sign | rounded);
 }
 
 void BatchConvertFp8ToFp16(const uint8_t* source, uint16_t* destination,
     size_t count, Fp8Format format) noexcept
 {
-    if (!source || !destination || count == 0)
+    if (!source || !destination)
         return;
-
-    const uint16_t* const table = (format == Fp8Format::eE4M3)
-        ? gTables.e4m3ToFp16.data()
-        : gTables.e5m2ToFp16.data();
-
+    const auto& table = format == Fp8Format::eE4M3 ? Tables().e4m3 : Tables().e5m2;
     for (size_t i = 0; i < count; ++i)
-    {
         destination[i] = table[source[i]];
-    }
-    gEmulatedOperationCount.fetch_add(count, std::memory_order_relaxed);
+    gReferenceOperationCount.fetch_add(count, std::memory_order_relaxed);
 }
 
-void EmulateMmaM16N8K32_Fp8ToFp32(
-    const uint8_t* matrixA_e4m3,
-    const uint8_t* matrixB_e4m3,
-    const float* matrixC_f32,
-    float* matrixD_f32
-) noexcept
+void EmulateMmaM16N8K32_Fp8ToFp32(const uint8_t* matrixA,
+    const uint8_t* matrixB, const float* matrixC, float* matrixD) noexcept
 {
-    if (!matrixA_e4m3 || !matrixB_e4m3 || !matrixD_f32)
+    if (!matrixA || !matrixB || !matrixD)
         return;
-
-    // Tile dimensions for m16n8k32
-    constexpr size_t M = 16;
-    constexpr size_t N = 8;
-    constexpr size_t K = 32;
-
-    for (size_t i = 0; i < M; ++i)
+    const auto& table = Tables().e4m3Float;
+    for (size_t i = 0; i < 16; ++i)
     {
-        for (size_t j = 0; j < N; ++j)
+        for (size_t j = 0; j < 8; ++j)
         {
-            float acc = matrixC_f32 ? matrixC_f32[i * N + j] : 0.0f;
-            for (size_t k = 0; k < K; ++k)
-            {
-                // Look up FP32 values for FP8 E4M3 weights and multiply-accumulate
-                const float a = gTables.e4m3ToFp32[matrixA_e4m3[i * K + k]];
-                const float b = gTables.e4m3ToFp32[matrixB_e4m3[k * N + j]];
-                acc += a * b;
-            }
-            matrixD_f32[i * N + j] = acc;
+            float accumulator = matrixC ? matrixC[i * 8 + j] : 0.0f;
+            for (size_t k = 0; k < 32; ++k)
+                accumulator = std::fma(table[matrixA[i * 32 + k]],
+                    table[matrixB[j * 32 + k]], accumulator);
+            matrixD[i * 8 + j] = accumulator;
         }
     }
-    gEmulatedOperationCount.fetch_add(M * N * K, std::memory_order_relaxed);
-}
-
-bool IsEmulationActive() noexcept
-{
-    return gEmulationActive.load(std::memory_order_acquire);
-}
-
-void SetEmulationActive(bool active) noexcept
-{
-    gEmulationActive.store(active, std::memory_order_release);
+    gReferenceOperationCount.fetch_add(16 * 8 * 32, std::memory_order_relaxed);
 }
 
 uint64_t GetEmulatedOperationCount() noexcept
 {
-    return gEmulatedOperationCount.load(std::memory_order_acquire);
-}
-
-void IncrementEmulatedOperationCount(uint64_t delta) noexcept
-{
-    gEmulatedOperationCount.fetch_add(delta, std::memory_order_relaxed);
+    return gReferenceOperationCount.load(std::memory_order_relaxed);
 }
 }

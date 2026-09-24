@@ -1,4 +1,8 @@
 #include "reshade_frontend.h"
+#include "control_config.h"
+#include "runtime_paths.h"
+#include "process_session.h"
+#include "status_validation.h"
 
 #if defined(MFG_UNLOCK_RESHADE_UI_CLIENT)
 #include "backend_bridge.h"
@@ -310,10 +314,9 @@ bool ResolveNativeFilePaths() noexcept
     const std::filesystem::path directory =
         std::filesystem::path(executablePath).parent_path();
 #if defined(MFG_UNLOCK_V12_UNIVERSAL_UI)
-    gNativeConfigPath = (directory
-        / L"RTX40MFG-Universal.json").wstring();
-    gNativeStatusPath = (directory
-        / L"RTX40MFG-Universal.status.json").wstring();
+    gNativeConfigPath = runtime_paths::ResolveConfigPath(directory.wstring());
+    gNativeStatusPath = runtime_paths::ResolveStatusPath(
+        gNativeConfigPath, directory.wstring());
 #else
     if (GetModuleHandleW(L"RTX40MFG-Universal.asi"))
     {
@@ -392,6 +395,13 @@ BOOL PersistCompanionControl() noexcept
     return TRUE;
 }
 
+bool ReadCurrentNativeStatus(std::string& content)
+{
+    static const auto session = process_session::Current();
+    return ReadTextFile(gNativeStatusPath, content)
+        && status_validation::IsCurrent(content, session,
+            process_session::UnixTimeSeconds());
+}
 BOOL WINAPI NativeFileGetSnapshot(MfgUnlockReShadeSnapshot* snapshot)
 {
     if (!snapshot || snapshot->structSize < sizeof(*snapshot))
@@ -410,25 +420,20 @@ BOOL WINAPI NativeFileGetSnapshot(MfgUnlockReShadeSnapshot* snapshot)
     strcpy_s(output.patchRoute, "pending");
 
     std::string control;
-    if (ReadTextFile(gNativeConfigPath, control))
+    control_config::ControlConfig parsedControl{};
+    if (ReadTextFile(gNativeConfigPath, control)
+        && control_config::Parse(control.data(), control.size(), parsedControl))
     {
-        BOOL followGame = FALSE;
-        output.followGameMode = ParseJsonBool(
-            control, "followGame", followGame) ? followGame : FALSE;
-        ParseJsonInteger(control, "multiplier", output.desiredMultiplier);
-        ParseJsonInteger(control, "dynamicTargetFrameRate",
-            output.dynamicTargetFrameRate);
-        ParseJsonBool(control, "dynamicExperimental56",
-            output.dynamicExperimental56);
-        ParseJsonBool(control, "generatedOnlyDebug",
-            output.generatedOnlyDebug);
-        std::string controlMode;
-        if (ParseJsonString(control, "mode", controlMode))
-            output.dynamicMode = controlMode == "dynamic" ? TRUE : FALSE;
+        output.followGameMode = parsedControl.followGame ? TRUE : FALSE;
+        output.desiredMultiplier = parsedControl.multiplier;
+        output.dynamicTargetFrameRate = parsedControl.dynamicTargetFrameRate;
+        output.dynamicExperimental56 = parsedControl.dynamicExperimental56 ? TRUE : FALSE;
+        output.generatedOnlyDebug = parsedControl.generatedOnlyDebug ? TRUE : FALSE;
+        output.dynamicMode = parsedControl.dynamic ? TRUE : FALSE;
     }
 
     std::string status;
-    if (ReadTextFile(gNativeStatusPath, status))
+    if (ReadCurrentNativeStatus(status))
     {
         ParseJsonBool(status, "followGame", output.followGameMode);
         ParseJsonInteger(status, "version",
@@ -735,7 +740,7 @@ void MergeNativeMidpointStatus(
 
     std::string status;
     BOOL rebuildRequired = FALSE;
-    if (ReadTextFile(gNativeStatusPath, status))
+    if (ReadCurrentNativeStatus(status))
     {
         const bool complete =
             ParseJsonBool(status, "adaAuthoritativeD3D12DeviceObserved",
@@ -773,7 +778,7 @@ BOOL WINAPI NativeFileApplyControl(uint32_t multiplier, BOOL dynamicMode,
     const BOOL followGame = multiplier == 0 && dynamicMode == FALSE;
     uint32_t safeMaximumMultiplier = 2;
     std::string status;
-    if (ReadTextFile(gNativeStatusPath, status))
+    if (ReadCurrentNativeStatus(status))
         ParseJsonInteger(status, "safeMaximumMultiplier",
             safeMaximumMultiplier);
     safeMaximumMultiplier = std::clamp(
@@ -861,9 +866,15 @@ bool ConnectBackend() noexcept
         return true;
     }
 #if defined(MFG_UNLOCK_V12_UNIVERSAL_UI)
-    HMODULE core = GetModuleHandleW(L"RTX40MFGCore.dll");
+    HMODULE core = nullptr;
+    // Acquire and pin atomically before resolving or calling any export.
+    // GetModuleHandleW alone cannot keep a concurrently released DLL mapped.
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN, L"RTX40MFGCore.dll", &core);
     HMODULE shim = GetModuleHandleW(L"RTX40MFG.asi");
-    if (!core || !shim || !GetProcAddress(core, "MfgUnlockCoreLoaded")
+    using CoreReady = BOOL (WINAPI*)();
+    const auto coreReady = core ? reinterpret_cast<CoreReady>(
+        GetProcAddress(core, "MfgUnlockCoreLoaded")) : nullptr;
+    if (!core || !shim || !coreReady || !coreReady()
         || !ResolveNativeFilePaths())
     {
         ReleaseSRWLockExclusive(&gBackendConnectionLock);
@@ -1556,10 +1567,15 @@ void DrawSettings(reshade::api::effect_runtime* runtime)
         ImGui::TextUnformatted("FPS: measuring...");
     }
 #endif
-    if (snapshot.statusProtocolVersion < 18)
+    if (snapshot.statusProtocolVersion == 0)
     {
-        ImGui::TextWrapped("Update RTX40MFG.asi and RTX40MFGCore.dll "
-            "together; the loaded core uses an older protocol.");
+        ImGui::TextWrapped("Waiting for current core status. If this persists, "
+            "restart the game with the core, ASI and UI from the same package.");
+    }
+    else if (snapshot.statusProtocolVersion != status_validation::kProtocolVersion)
+    {
+        ImGui::TextWrapped("Update RTX40MFG.asi, RTX40MFGCore.dll and the UI "
+            "together; the loaded backend uses an incompatible protocol.");
     }
     else if (!snapshot.bridgeReady)
     {
@@ -1839,6 +1855,8 @@ void DrawSettings(reshade::api::effect_runtime* runtime)
 
         ImGui::Separator();
         ImGui::TextUnformatted("Compatibility");
+        ImGui::TextUnformatted("Temporal patch: Ada SM 8.9 only");
+        ImGui::TextUnformatted("RTX 30 / Ampere GPU backend: not implemented");
         ImGui::Text("NVIDIA profile: %s | status: %d | resolved: %s",
             snapshot.nvidiaProfileName[0]
                 ? snapshot.nvidiaProfileName : "not available",
@@ -1971,8 +1989,7 @@ void DrawSettings(reshade::api::effect_runtime* runtime)
     ImGui::Text("Midpoint outputs: raw %u | unique %u",
         gNativeMidpoint.rawCount,
         gNativeMidpoint.uniqueOutputs);
-    ImGui::Text("Ampere FP8->FP16 Bridge: %s",
-        gNativeMidpoint.backportEnabled ? "Active (Emulation)" : "Off");
+    ImGui::TextUnformatted("Ampere GPU backend: not implemented");
 #endif
 
     ImGui::Separator();
@@ -2100,16 +2117,16 @@ extern "C" __declspec(dllexport) const char* AUTHOR = "dashdogy";
 
 #if defined(MFG_UNLOCK_RESHADE_UI_CLIENT)
 extern "C" __declspec(dllexport) const char* NAME =
-    "Universal RTX 30/40 MFG Unlock V1.2";
+    "RTX 40 MFG Research V1.2";
 extern "C" __declspec(dllexport) const char* DESCRIPTION =
     "Universal DLSS Multi Frame Generation enabler for supported games on "
-    "NVIDIA GeForce RTX 30 and 40 Series GPUs.";
+    "NVIDIA Ada GPUs. Ampere GPU backend is not implemented.";
 #else
 extern "C" __declspec(dllexport) const char* NAME =
     "DLSS MFG Unlock - ReShade Early Load";
 extern "C" __declspec(dllexport) const char* DESCRIPTION =
     "Universal DLSS Multi Frame Generation enabler for supported games on "
-    "NVIDIA GeForce RTX 30 and 40 Series GPUs.";
+    "NVIDIA Ada GPUs. Ampere GPU backend is not implemented.";
 #endif
 
 extern "C" __declspec(dllexport) bool AddonInit(

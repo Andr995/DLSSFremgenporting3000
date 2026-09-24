@@ -1,9 +1,19 @@
 cmake_minimum_required(VERSION 3.24)
-project(RTX40MFGNative LANGUAGES C CXX ASM_MASM)
+project(RTX40MFGNative LANGUAGES C CXX)
+
+if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(FATAL_ERROR "The injected DLLs require Windows x64, MSVC and MASM. For portable checks, configure tests/ instead.")
+endif()
+enable_language(ASM_MASM)
+include(CTest)
 
 set(STREAMLINE_ROOT "" CACHE PATH "Path to the NVIDIA Streamline SDK directory")
 if(NOT EXISTS "${STREAMLINE_ROOT}/include/sl_dlss_g.h")
     message(FATAL_ERROR "Set STREAMLINE_ROOT to a Streamline SDK directory containing include/sl_dlss_g.h")
+endif()
+if(NOT EXISTS "${STREAMLINE_ROOT}/external/json/include/nlohmann/json.hpp"
+   OR NOT EXISTS "${STREAMLINE_ROOT}/external/ngx-sdk/include/nvsdk_ngx.h")
+    message(FATAL_ERROR "The Streamline SDK must include its JSON and NGX headers")
 endif()
 
 option(MFG_UNLOCK_BUILD_UNIVERSAL_UI
@@ -15,13 +25,14 @@ set(IMGUI_ROOT "" CACHE PATH
 
 set(MFG_UNLOCK_CORE_SOURCES
     patcher.cpp
+    control_config.cpp
+    runtime_paths.cpp
     midpoint_fix.cpp
     dlssg_provider_policy.cpp
     entry_detour.cpp
     entry_detour.asm
     nvidia_mfg_policy.cpp
     temporal_interval_trace.cpp
-    ampere_fp8_emulator.cpp
     v1_2_core.rc
 )
 
@@ -44,12 +55,14 @@ target_compile_definitions(MfgUnlockMinHook PRIVATE WIN32_LEAN_AND_MEAN)
 
 add_library(RTX40MFGCore SHARED ${MFG_UNLOCK_CORE_SOURCES})
 target_compile_features(RTX40MFGCore PRIVATE cxx_std_20)
+target_compile_options(RTX40MFGCore PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W4;/permissive-;/EHsc>")
 target_compile_definitions(RTX40MFGCore PRIVATE
     UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
     MFG_UNLOCK_UNIVERSAL_CONFIG=1)
 target_include_directories(RTX40MFGCore PRIVATE
     "${STREAMLINE_ROOT}/include"
     "${STREAMLINE_ROOT}/external/ngx-sdk/include"
+    "${STREAMLINE_ROOT}/external/json/include"
 )
 target_link_libraries(RTX40MFGCore PRIVATE
     MfgUnlockMinHook bcrypt version)
@@ -80,6 +93,9 @@ if(MFG_UNLOCK_BUILD_UNIVERSAL_UI)
     endif()
 
     add_library(RTX40MFGReShadeUI SHARED
+        control_config.cpp
+        runtime_paths.cpp
+        status_validation.cpp
         reshade_frontend.cpp
         reshade_frontend_entry.cpp
         reshade_ui_version.rc
@@ -93,6 +109,7 @@ if(MFG_UNLOCK_BUILD_UNIVERSAL_UI)
         ImTextureID=ImU64
     )
     target_include_directories(RTX40MFGReShadeUI PRIVATE
+        "${STREAMLINE_ROOT}/external/json/include"
         "${RESHADE_ROOT}/include"
         "${IMGUI_ROOT}"
     )
@@ -102,4 +119,8 @@ if(MFG_UNLOCK_BUILD_UNIVERSAL_UI)
         OUTPUT_NAME "RTX40MFG-UI"
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
+endif()
+
+if(BUILD_TESTING)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../tests" "tests")
 endif()

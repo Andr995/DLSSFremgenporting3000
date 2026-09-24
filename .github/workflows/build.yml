@@ -1,64 +1,48 @@
-name: Build RTX 30/40 MFG Unlock
+name: Build and test MFG research tools
 
 on:
   push:
-    branches: [ "**" ]
   pull_request:
-    branches: [ "**" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build:
-    runs-on: windows-latest
-
+  ampere-package:
+    runs-on: windows-2022
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup MSVC developer command prompt
+      - name: Prepare pinned precompiled backend and test deployment
+        id: package
+        shell: pwsh
+        run: |
+          $package = ./scripts/prepare-ampere.ps1
+          ./tests/ampere_deployment_tests.ps1 -Package $package
+          "directory=$package" >> $env:GITHUB_OUTPUT
+      - name: Upload Ampere installation package
+        uses: actions/upload-artifact@v4
+        with:
+          name: NVIDIA-FG-RTX3000-Cyberpunk
+          path: ${{ steps.package.outputs.directory }}/*
+          if-no-files-found: error
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure x64 MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Clone Dependencies
+      - name: Build pinned dependencies and run regression tests
+        id: build
         shell: pwsh
-        run: |
-          mkdir deps
-          cd deps
-          git clone --depth 1 https://github.com/NVIDIAGameWorks/Streamline.git
-          git clone --depth 1 --branch v6.8.0 https://github.com/crosire/reshade.git
-          cd reshade
-          git submodule update --init --depth 1 deps/imgui
-
-      - name: Configure CMake
-        shell: pwsh
-        run: |
-          cmake -B build -S source/native -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DSTREAMLINE_ROOT="${{ github.workspace }}/deps/Streamline" `
-            -DRESHADE_ROOT="${{ github.workspace }}/deps/reshade" `
-            -DIMGUI_ROOT="${{ github.workspace }}/deps/reshade/deps/imgui" `
-            -DMFG_UNLOCK_BUILD_UNIVERSAL_UI=ON
-
-      - name: Build
-        shell: pwsh
-        run: |
-          cmake --build build --config Release
-
-      - name: Prepare Artifacts
-        shell: pwsh
-        run: |
-          mkdir dist
-          Copy-Item build/RTX40MFGCore.dll dist/
-          Copy-Item build/RTX40MFG.asi dist/
-          Copy-Item build/RTX40MFG-UI.addon64 dist/
-          if (Test-Path "bin/x64/global.ini") { Copy-Item bin/x64/global.ini dist/ }
-
-      - name: Upload Artifacts
+        run: ./scripts/build.ps1
+      - name: Upload verified package
         uses: actions/upload-artifact@v4
         with:
-          name: RTX30_40_MFG_Unlock_x64
-          path: dist/*
+          name: MFG-research-x64
+          path: ${{ steps.build.outputs.package }}/*
+          if-no-files-found: error

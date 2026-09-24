@@ -1,4 +1,9 @@
 #include "shared.h"
+#include "control_config.h"
+#include "control_state.h"
+#include "module_lifetime.h"
+#include "runtime_paths.h"
+#include "process_session.h"
 #include "midpoint_fix.h"
 #include "dlssg_provider_policy.h"
 #include "entry_detour.h"
@@ -55,13 +60,8 @@ static_assert(offsetof(VulkanInfoPrefix, device) == 32);
 static_assert(offsetof(VulkanInfoPrefix, physicalDevice) == 48);
 
 FILE* gLog = nullptr;
-std::atomic<bool> gDesiredFollowGame{true};
-std::atomic<uint32_t> gDesiredMultiplier{2};
-std::atomic<bool> gDesiredDynamicMode{false};
-std::atomic<uint32_t> gDynamicTargetFrameRate{0};
-std::atomic<bool> gDynamicExperimental56{false};
-std::atomic<bool> gGeneratedOnlyDebug{false};
-std::atomic<uint64_t> gDesiredRevision{0};
+control_config::State gDesiredControl;
+std::atomic<bool> gCoreStartupReady{false};
 std::atomic<uint64_t> gAppliedRevision{0};
 std::atomic<uint64_t> gAttemptedRevision{0};
 std::atomic<uint64_t> gLastAttemptTick{0};
@@ -257,23 +257,9 @@ enum class SelectiveOtaDlssgWrapperFailure : uint32_t
     eNoCompatibleCandidate = 4,
 };
 
-struct ControlConfig
-{
-    bool followGame = true;
-    uint32_t multiplier = 2;
-    bool dynamic = false;
-    uint32_t dynamicTargetFrameRate = 0;
-    bool dynamicExperimental56 = false;
-    bool generatedOnlyDebug = false;
-    bool intervalLogging = true;
-    bool selectiveOtaDlssgWrapper = false;
-};
+using control_config::ControlConfig;
 
-struct ControlSnapshot
-{
-    ControlConfig control{};
-    uint64_t revision = 0;
-};
+using ControlSnapshot = control_config::Snapshot;
 
 struct LastGameOptions
 {
@@ -482,7 +468,7 @@ void Log(const wchar_t* format, ...)
     OutputDebugStringW(L"[MfgUnlock] ");
     OutputDebugStringW(message);
     OutputDebugStringW(L"\n");
-    if (gLog)
+    if (gLogReady.load(std::memory_order_acquire) && gLog)
     {
         fwprintf_s(gLog, L"%s\n", message);
         fflush(gLog);
@@ -635,7 +621,7 @@ void RefreshUiInputReadiness(uint32_t viewport)
         return;
 
     if (gControlReady.load(std::memory_order_acquire))
-        gDesiredRevision.fetch_add(1, std::memory_order_release);
+        gDesiredControl.BumpRevision();
     Log(L"UI inputs changed: ready=%d viewport=%u hudless=%d uiAlpha=%d "
         L"uiColorAlpha=%d dimensionsKnown=%d dimensionsMatch=%d "
         L"hudless=%ux%u ui=%ux%u",
@@ -1097,140 +1083,7 @@ bool IsRegularFile(const std::wstring& path)
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
-bool FindJsonValue(const std::string& content, const char* name, size_t& value)
-{
-    const std::string key = std::string("\"") + name + "\"";
-    const auto keyOffset = content.find(key);
-    if (keyOffset == std::string::npos)
-        return false;
-    const auto colon = content.find(':', keyOffset + key.size());
-    if (colon == std::string::npos)
-        return false;
-    value = content.find_first_not_of(" \t\r\n", colon + 1);
-    return value != std::string::npos;
-}
-
-bool TryParseUnsigned(const std::string& content, const char* name,
-    uint32_t minimum, uint32_t maximum, uint32_t& value)
-{
-    size_t offset = 0;
-    if (!FindJsonValue(content, name, offset) || content[offset] < '0' || content[offset] > '9')
-        return false;
-
-    uint64_t parsed = 0;
-    size_t end = offset;
-    while (end < content.size() && content[end] >= '0' && content[end] <= '9')
-    {
-        parsed = parsed * 10 + static_cast<uint32_t>(content[end] - '0');
-        if (parsed > maximum)
-            return false;
-        ++end;
-    }
-    if (parsed < minimum || parsed > maximum)
-        return false;
-    value = static_cast<uint32_t>(parsed);
-    return true;
-}
-
-bool TryParseBoolean(const std::string& content, const char* name, bool& value)
-{
-    size_t offset = 0;
-    if (!FindJsonValue(content, name, offset))
-        return false;
-    if (content.compare(offset, 4, "true") == 0)
-    {
-        value = true;
-        return true;
-    }
-    if (content.compare(offset, 5, "false") == 0)
-    {
-        value = false;
-        return true;
-    }
-    return false;
-}
-
-bool TryParseControl(const char* data, size_t size, ControlConfig& control)
-{
-    if (!data || size == 0)
-        return false;
-
-    const std::string content(data, size);
-    ControlConfig parsed{};
-    size_t followGameOffset = 0;
-    if (FindJsonValue(content, "followGame", followGameOffset))
-    {
-        if (!TryParseBoolean(content, "followGame", parsed.followGame))
-            return false;
-    }
-    else
-    {
-        // Configs written before Follow game support represented an explicit
-        // fixed/dynamic override. Preserve that meaning during migration.
-        parsed.followGame = false;
-    }
-    if (!TryParseUnsigned(content, "multiplier",
-        kMinimumMultiplier, kMaximumMultiplier, parsed.multiplier))
-        return false;
-
-    size_t modeOffset = 0;
-    if (FindJsonValue(content, "mode", modeOffset))
-    {
-        if (content.compare(modeOffset, 9, "\"dynamic\"") == 0)
-            parsed.dynamic = true;
-        else if (content.compare(modeOffset, 8, "\"follow\"") == 0
-            && parsed.followGame)
-            parsed.dynamic = false;
-        else if (content.compare(modeOffset, 7, "\"fixed\"") != 0)
-            return false;
-    }
-
-    if (parsed.followGame)
-        parsed.dynamic = false;
-
-    size_t targetOffset = 0;
-    if (FindJsonValue(content, "dynamicTargetFrameRate", targetOffset)
-        && !TryParseUnsigned(content, "dynamicTargetFrameRate", 0, 1000,
-            parsed.dynamicTargetFrameRate))
-        return false;
-
-    size_t experimentalOffset = 0;
-    if (FindJsonValue(content, "dynamicExperimental56", experimentalOffset)
-        && !TryParseBoolean(content, "dynamicExperimental56",
-            parsed.dynamicExperimental56))
-        return false;
-
-    size_t intervalLoggingOffset = 0;
-    bool legacyIntervalLogging = true;
-    if (FindJsonValue(content, "intervalLogging", intervalLoggingOffset)
-        && !TryParseBoolean(content, "intervalLogging",
-            legacyIntervalLogging))
-        return false;
-    // Protocol 18 release tracing is always active. Accept the retired setting
-    // so existing files remain valid, but never let it disable diagnostics.
-    parsed.intervalLogging = true;
-
-    size_t generatedOnlyOffset = 0;
-    if (FindJsonValue(content, "generatedOnlyDebug", generatedOnlyOffset)
-        && !TryParseBoolean(content, "generatedOnlyDebug",
-            parsed.generatedOnlyDebug))
-        return false;
-
-    size_t selectiveWrapperOffset = 0;
-    if (FindJsonValue(content, "selectiveOtaDlssgWrapper",
-            selectiveWrapperOffset)
-        && !TryParseBoolean(content, "selectiveOtaDlssgWrapper",
-            parsed.selectiveOtaDlssgWrapper))
-    {
-        return false;
-    }
-    // Protocol 18 retires single-wrapper redirection. Keep accepting the old
-    // key so existing configs migrate without being rejected, but never arm it.
-    parsed.selectiveOtaDlssgWrapper = false;
-
-    control = parsed;
-    return true;
-}
+using control_config::Parse;
 
 bool ReadControlFile(const std::wstring& path, ControlConfig& control)
 {
@@ -1240,11 +1093,11 @@ bool ReadControlFile(const std::wstring& path, ControlConfig& control)
     if (file == INVALID_HANDLE_VALUE)
         return false;
 
-    std::array<char, 4096> buffer{};
+    std::array<char, control_config::kMaximumBytes + 1> buffer{};
     DWORD bytesRead = 0;
     const BOOL read = ReadFile(file, buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr);
     CloseHandle(file);
-    return read && TryParseControl(buffer.data(), bytesRead, control);
+    return read && Parse(buffer.data(), bytesRead, control);
 }
 
 bool ReadLastWriteTime(const std::wstring& path, FILETIME& writeTime)
@@ -1287,6 +1140,11 @@ ControlConfig ReadInitialControl()
 
 std::wstring ResolveConfigPath(HMODULE instance, const std::wstring& executableDirectory)
 {
+#if defined(MFG_UNLOCK_UNIVERSAL_CONFIG)
+    (void)instance;
+    return runtime_paths::ResolveConfigPath(executableDirectory);
+#else
+
     std::wstring explicitPath(32768, L'\0');
     const DWORD explicitLength = GetEnvironmentVariableW(
         L"RTX40_MFG_CONFIG_PATH", explicitPath.data(),
@@ -1297,15 +1155,6 @@ std::wstring ResolveConfigPath(HMODULE instance, const std::wstring& executableD
         return explicitPath;
     }
 
-#if defined(MFG_UNLOCK_UNIVERSAL_CONFIG)
-    const std::wstring cetDirectory = JoinPath(executableDirectory,
-        L"plugins\\cyber_engine_tweaks\\mods\\RTX40MFG");
-    if (IsRegularFile(JoinPath(cetDirectory, L"init.lua")))
-    {
-        return JoinPath(cetDirectory, L"RTX40MFG-Universal.json");
-    }
-    return JoinPath(executableDirectory, L"RTX40MFG-Universal.json");
-#else
     const std::wstring cetPath = JoinPath(executableDirectory,
         L"plugins\\cyber_engine_tweaks\\mods\\RTX40MFG\\config.json");
     if (IsRegularFile(cetPath))
@@ -1324,6 +1173,10 @@ std::wstring ResolveConfigPath(HMODULE instance, const std::wstring& executableD
 std::wstring ResolveStatusPath(const std::wstring& configPath,
     const std::wstring& executableDirectory)
 {
+#if defined(MFG_UNLOCK_UNIVERSAL_CONFIG)
+    return runtime_paths::ResolveStatusPath(configPath, executableDirectory);
+#else
+
     std::wstring explicitPath(32768, L'\0');
     const DWORD explicitLength = GetEnvironmentVariableW(
         L"RTX40_MFG_STATUS_PATH", explicitPath.data(),
@@ -1334,63 +1187,23 @@ std::wstring ResolveStatusPath(const std::wstring& configPath,
         return explicitPath;
     }
 
-#if defined(MFG_UNLOCK_UNIVERSAL_CONFIG)
-    const std::wstring universalConfig = JoinPath(
-        executableDirectory, L"RTX40MFG-Universal.json");
-    const std::wstring cetConfig = JoinPath(executableDirectory,
-        L"plugins\\cyber_engine_tweaks\\mods\\RTX40MFG\\"
-        L"RTX40MFG-Universal.json");
-    if (_wcsicmp(configPath.c_str(), universalConfig.c_str()) == 0
-        || _wcsicmp(configPath.c_str(), cetConfig.c_str()) == 0)
-    {
-        return JoinPath(ParentPath(configPath),
-            L"RTX40MFG-Universal.status.json");
-    }
-#endif
+    (void)executableDirectory;
     return JoinPath(ParentPath(configPath), L"bridge_status.json");
+#endif
 }
 
 uint64_t StoreControl(const ControlConfig& control)
 {
-    gDesiredFollowGame.store(control.followGame, std::memory_order_relaxed);
-    gDesiredMultiplier.store(control.multiplier, std::memory_order_relaxed);
-    gDesiredDynamicMode.store(control.dynamic, std::memory_order_relaxed);
-    gDynamicTargetFrameRate.store(control.dynamicTargetFrameRate, std::memory_order_relaxed);
-    gDynamicExperimental56.store(control.dynamicExperimental56, std::memory_order_relaxed);
-    gGeneratedOnlyDebug.store(control.generatedOnlyDebug,
-        std::memory_order_relaxed);
     temporal_interval_trace::SetEnabled(true);
-    const uint64_t revision = gDesiredRevision.fetch_add(1, std::memory_order_release) + 1;
+    const uint64_t revision = gDesiredControl.Store(control);
     gControlReady.store(true, std::memory_order_release);
     return revision;
 }
 
 ControlSnapshot ReadControlSnapshot()
 {
-    ControlSnapshot snapshot{};
-    for (;;)
-    {
-        const uint64_t before = gDesiredRevision.load(std::memory_order_acquire);
-        snapshot.control.followGame =
-            gDesiredFollowGame.load(std::memory_order_relaxed);
-        snapshot.control.multiplier = gDesiredMultiplier.load(std::memory_order_relaxed);
-        snapshot.control.dynamic = gDesiredDynamicMode.load(std::memory_order_relaxed);
-        snapshot.control.dynamicTargetFrameRate =
-            gDynamicTargetFrameRate.load(std::memory_order_relaxed);
-        snapshot.control.dynamicExperimental56 =
-            gDynamicExperimental56.load(std::memory_order_relaxed);
-        snapshot.control.generatedOnlyDebug =
-            gGeneratedOnlyDebug.load(std::memory_order_relaxed);
-        snapshot.control.intervalLogging = temporal_interval_trace::Enabled();
-        const uint64_t after = gDesiredRevision.load(std::memory_order_acquire);
-        if (before == after)
-        {
-            snapshot.revision = after;
-            return snapshot;
-        }
-    }
+    return gDesiredControl.Read();
 }
-
 void PublishLiveBridge(const ControlConfig& control)
 {
     wchar_t multiplier[2]{ static_cast<wchar_t>(L'0' + std::clamp(
@@ -1509,7 +1322,7 @@ bool WriteBridgeStatus(const ControlConfig& control, DWORD pid)
     const UiInputSnapshot uiInputs = ReadUiInputSnapshot(uiViewport);
     const bool bridgeReady = BridgeReady();
     const char* route = PatchRouteName();
-    const uint64_t desiredRevision = gDesiredRevision.load(std::memory_order_acquire);
+    const uint64_t desiredRevision = gDesiredControl.Revision();
     const uint64_t appliedRevision = gAppliedRevision.load(std::memory_order_acquire);
     const bool setOptionsSeen = gSetOptionsSeen.load(std::memory_order_acquire);
     const bool getStateSeen = gGetStateSeen.load(std::memory_order_acquire);
@@ -1618,7 +1431,7 @@ bool WriteBridgeStatus(const ControlConfig& control, DWORD pid)
 
     char json[16384]{};
     const int length = sprintf_s(json,
-        "{\"version\":18,\"pid\":%lu,\"heartbeat\":%llu,\"route\":\"%s\","
+        "{\"version\":%u,\"pid\":%lu,\"processStartTime\":%llu,\"heartbeat\":%llu,\"route\":\"%s\","
         "\"bridgeReady\":%s,\"liveHookInstalled\":%s,"
         "\"loaderCoreImported\":true,"
         "\"nvidiaCompatibilityResolved\":%s,"
@@ -1769,7 +1582,9 @@ bool WriteBridgeStatus(const ControlConfig& control, DWORD pid)
         "\"releaseEntryCurrent\":%s,"
         "\"frameGenerationOffAccepted\":%s,"
         "\"releaseObserved\":%s}\n",
+        status_validation::kProtocolVersion,
         static_cast<unsigned long>(pid),
+        static_cast<unsigned long long>(process_session::Current().processStartTime),
         static_cast<unsigned long long>(UnixTimeSeconds()), route,
         bridgeReady ? "true" : "false",
         gLiveHookInstalled.load(std::memory_order_relaxed) ? "true" : "false",
@@ -2123,7 +1938,7 @@ void RecordSetOptionsLifecycle(ControlRouteRecord& route, bool enabled,
     if (!IsAcceptedControlResult(result))
         return;
     route.lastAcceptedRevision.store(
-        gDesiredRevision.load(std::memory_order_acquire),
+        gDesiredControl.Revision(),
         std::memory_order_release);
     gGameFrameGenerationOn.store(enabled, std::memory_order_release);
     route.frameGenerationOffAccepted.store(!enabled,
@@ -2251,7 +2066,7 @@ bool ActivateControlRoute(uint32_t slot, ControlEntryPath path,
     }
     route->lastCallTick.store(GetTickCount64(), std::memory_order_release);
     route->lastCallRevision.store(
-        gDesiredRevision.load(std::memory_order_acquire),
+        gDesiredControl.Revision(),
         std::memory_order_release);
     PublishActiveControlRoute(*route);
     InstallControlRouteLifecycleEntry(slot);
@@ -6610,18 +6425,33 @@ MfgUnlockSampleFrameTelemetry()
 
 extern "C" __declspec(dllexport) BOOL WINAPI MfgUnlockCoreLoaded()
 {
-    return TRUE;
+    return gCoreStartupReady.load(std::memory_order_acquire) ? TRUE : FALSE;
 }
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH)
     {
+        // No hook, callback or worker may outlive our executable mapping.
+        if (!module_lifetime::PinForProcessLifetime(instance))
+            return FALSE;
         const DWORD bypassTlsIndex = TlsAlloc();
         if (bypassTlsIndex == TLS_OUT_OF_INDEXES)
             return FALSE;
         gInternalControlBypassTlsIndex.store(
             bypassTlsIndex, std::memory_order_release);
+        // Windows serializes DLL thread notifications with process attach, so
+        // this worker starts only after DllMain returns. Fail before any hook
+        // publication if thread creation is unavailable.
+        HANDLE thread = CreateThread(nullptr, 0, PatchWorker, instance, 0, nullptr);
+        if (!thread)
+        {
+            TlsFree(bypassTlsIndex);
+            gInternalControlBypassTlsIndex.store(TLS_OUT_OF_INDEXES,
+                std::memory_order_release);
+            return FALSE;
+        }
+        CloseHandle(thread);
         // Dynamic TLS does not require thread attach notifications. Some host
         // loader states can still reject this optimization; DllMain's frame is
         // deliberately kept small so an unexpected notification remains safe.
@@ -6666,9 +6496,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID)
             InspectLoadedModule(runtime, LoadedModulePath(runtime));
         }
         RegisterDllNotification();
-        HANDLE thread = CreateThread(nullptr, 0, PatchWorker, instance, 0, nullptr);
-        if (thread)
-            CloseHandle(thread);
+        gCoreStartupReady.store(true, std::memory_order_release);
     }
     return TRUE;
 }

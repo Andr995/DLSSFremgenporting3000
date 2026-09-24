@@ -1,0 +1,13 @@
+{
+  "Streamline": {
+    "url": "https://github.com/NVIDIAGameWorks/Streamline.git",
+    "tag": "v2.12.0",
+    "commit": "e8aaa6eaac968711fb62473d4ae8256dde20919b"
+  },
+  "reshade": {
+    "url": "https://github.com/crosire/reshade.git",
+    "tag": "v6.8.0",
+    "commit": "18deaa52de0c425a78b329e9cb3c497281cd00ec",
+    "imguiCommit": "3912b3d9a9c1b3f17431aebafd86d2f40ee6e59c"
+  }
+}

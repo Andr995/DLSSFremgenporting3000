@@ -2,38 +2,33 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <atomic>
 
+// CPU reference arithmetic for future backend validation. These functions do
+// not intercept CUDA instructions, access GPU buffers, or enable NGX on Ampere.
 namespace ampere_emulation
 {
-// FP8 format specifications used in NVIDIA Ada Lovelace (SM 8.9) and Blackwell (SM 12.0)
 enum class Fp8Format : uint32_t
 {
-    eE4M3 = 0, // 1 sign bit, 4 exponent bits, 3 mantissa bits (bias 7) - inference weights
-    eE5M2 = 1  // 1 sign bit, 5 exponent bits, 2 mantissa bits (bias 15) - dynamic activations
+    eE4M3 = 0, // E4M3FN: bias 7, finite extended exponent, signed NaNs.
+    eE5M2 = 1  // Bias 15, IEEE-style infinities and NaNs.
 };
 
-// Software conversion between FP8 and IEEE 754 half-precision FP16
-uint16_t ConvertFp8ToFp16(uint8_t fp8Value, Fp8Format format) noexcept;
-uint8_t ConvertFp16ToFp8(uint16_t fp16Value, Fp8Format format) noexcept;
+// Decode exactly; quiet NaNs and preserve their sign, and signed zero.
+uint16_t ConvertFp8ToFp16(uint8_t value, Fp8Format format) noexcept;
+// Round to nearest, ties to even, saturating finite overflow. Preserve E5M2
+// infinities; saturate E4M3 infinities; canonicalize NaNs with sign preserved.
+uint8_t ConvertFp16ToFp8(uint16_t value, Fp8Format format) noexcept;
 
-// Batch buffer conversion for generic CUDA core streaming
+// Host buffers must not overlap. Null buffers are a no-op.
 void BatchConvertFp8ToFp16(const uint8_t* source, uint16_t* destination,
     size_t count, Fp8Format format) noexcept;
 
-// Emulated Tensor Core Matrix-Multiply Accumulate (MMA tile 16x8x32)
-// Emulates hardware instruction: mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3
-// Transforms unsupported FP8 tensor ops into FP16/FP32 operations runnable on Ampere (SM 8.6)
-void EmulateMmaM16N8K32_Fp8ToFp32(
-    const uint8_t* matrixA_e4m3, // 16 x 32 elements
-    const uint8_t* matrixB_e4m3, // 32 x 8 elements
-    const float* matrixC_f32,    // 16 x 8 accumulator input
-    float* matrixD_f32           // 16 x 8 accumulator output
-) noexcept;
+// Numerical reference for a row.col tile, not CUDA warp-register emulation.
+// A: row-major 16x32; B: column-major 32x8; C/D: row-major 16x8.
+// C may be null (zero) or equal D. Other buffers must not overlap.
+void EmulateMmaM16N8K32_Fp8ToFp32(const uint8_t* matrixA,
+    const uint8_t* matrixB, const float* matrixC, float* matrixD) noexcept;
 
-// Emulation State & Telemetry
-bool IsEmulationActive() noexcept;
-void SetEmulationActive(bool active) noexcept;
+// Counts CPU reference work only, never GPU execution or generated frames.
 uint64_t GetEmulatedOperationCount() noexcept;
-void IncrementEmulatedOperationCount(uint64_t delta = 1) noexcept;
 }

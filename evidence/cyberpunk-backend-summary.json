@@ -1,0 +1,72 @@
+[
+  {
+    "log": "backend_29520.jsonl",
+    "sha256": "A5BB2186C2D751E19868B2D79403401012397551C1DB7CEB2FB02974431A84F4",
+    "gpu": "NVIDIA GeForce RTX 3060 Ti",
+    "actual_sm": 86,
+    "image": "cubin_sm86",
+    "runtime_profile": "310.9.1.0",
+    "runtime_sha256": "ff6e90eb78b827927dff5b4ecc6b1c870c2e9bca29ed9f48c7d348cc9e170b82",
+    "optimized_tier": 0,
+    "successful_dlssg_creates": 1,
+    "evaluate_samples": 116,
+    "sample_statuses": [
+      1
+    ],
+    "sample_generated_frame_counts": [
+      1,
+      3
+    ],
+    "max_failed_launches": 0.0,
+    "max_image_fallbacks": 0.0,
+    "exit_evaluates": 12516,
+    "exit_create_failures": 0,
+    "clean_exit": true
+  },
+  {
+    "log": "backend_1972.jsonl",
+    "sha256": "A3E63621B04E11F89E2644C06240DA8993D45D7DDB0CA0C46679519AD578A7A2",
+    "gpu": "NVIDIA GeForce RTX 3060 Ti",
+    "actual_sm": 86,
+    "image": "cubin_sm86",
+    "runtime_profile": "310.9.1.0",
+    "runtime_sha256": "ff6e90eb78b827927dff5b4ecc6b1c870c2e9bca29ed9f48c7d348cc9e170b82",
+    "optimized_tier": 0,
+    "successful_dlssg_creates": 1,
+    "evaluate_samples": 148,
+    "sample_statuses": [
+      1
+    ],
+    "sample_generated_frame_counts": [
+      3
+    ],
+    "max_failed_launches": 0.0,
+    "max_image_fallbacks": 0.0,
+    "exit_evaluates": 16323,
+    "exit_create_failures": 0,
+    "clean_exit": true
+  },
+  {
+    "log": "backend_28968.jsonl",
+    "sha256": "A305BAC8675D746A56D4182979E3BC0EC26089A3D2D241A9F120618E0265A4CB",
+    "gpu": "NVIDIA GeForce RTX 3060 Ti",
+    "actual_sm": 86,
+    "image": "cubin_sm86",
+    "runtime_profile": "310.9.1.0",
+    "runtime_sha256": "ff6e90eb78b827927dff5b4ecc6b1c870c2e9bca29ed9f48c7d348cc9e170b82",
+    "optimized_tier": 0,
+    "successful_dlssg_creates": 1,
+    "evaluate_samples": 32,
+    "sample_statuses": [
+      1
+    ],
+    "sample_generated_frame_counts": [
+      3
+    ],
+    "max_failed_launches": 0.0,
+    "max_image_fallbacks": 0.0,
+    "exit_evaluates": 2514,
+    "exit_create_failures": 0,
+    "clean_exit": true
+  }
+]

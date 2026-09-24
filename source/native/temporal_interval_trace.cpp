@@ -8,7 +8,6 @@
 #include <cstdio>
 #include <cwchar>
 #include <share.h>
-#include <vector>
 
 namespace temporal_interval_trace
 {
@@ -56,10 +55,8 @@ std::atomic<uint64_t> gInvalidSamples{0};
 std::atomic<uint64_t> gDroppedSamples{0};
 std::atomic<uint32_t> gSeenCountMask{0};
 std::atomic<uint32_t> gSeenIndexMask{0};
-std::atomic<int32_t> gLastCount{0};
-std::atomic<int32_t> gLastIndex{0};
-std::atomic<uint32_t> gLastPositionNumerator{0};
-std::atomic<uint32_t> gLastPositionDenominator{0};
+// One atomic publication prevents snapshots mixing different Evaluate calls.
+std::atomic<uint64_t> gLastTemporalSample{0};
 std::array<std::atomic<uintptr_t>, kFirstSampleHandleCapacity>
     gFirstSampleHandles{};
 std::array<std::atomic<uint64_t>, kFirstSampleHandleCapacity>
@@ -202,12 +199,10 @@ bool RecordImpl(const NVSDK_NGX_Handle* handle,
             std::memory_order_relaxed);
         gSeenIndexMask.fetch_or(1u << static_cast<uint32_t>(event.index - 1),
             std::memory_order_relaxed);
-        gLastCount.store(event.count, std::memory_order_relaxed);
-        gLastIndex.store(event.index, std::memory_order_relaxed);
-        gLastPositionNumerator.store(
-            static_cast<uint32_t>(event.index), std::memory_order_relaxed);
-        gLastPositionDenominator.store(
-            static_cast<uint32_t>(event.count + 1), std::memory_order_release);
+        gLastTemporalSample.store(
+            (static_cast<uint64_t>(event.count) << 32)
+                | static_cast<uint32_t>(event.index),
+            std::memory_order_release);
     }
     else
     {
@@ -293,29 +288,32 @@ void Flush() noexcept
         return;
     }
 
-    std::vector<EventNode*> nodes;
-    nodes.reserve(256);
+    // The detached list cannot exceed the fixed pool. Avoid allocation in this
+    // noexcept worker path (vector growth could terminate the host process).
+    std::array<EventNode*, kEventPoolSize> nodes{};
+    size_t nodeCount = 0;
     while (list)
     {
         PSLIST_ENTRY next = list->Next;
-        nodes.push_back(CONTAINING_RECORD(list, EventNode, link));
+        nodes[nodeCount++] = CONTAINING_RECORD(list, EventNode, link);
         list = next;
     }
-    std::sort(nodes.begin(), nodes.end(), [](const EventNode* left,
+    std::sort(nodes.begin(), nodes.begin() + nodeCount, [](const EventNode* left,
         const EventNode* right) {
         return left->event.sequence < right->event.sequence;
     });
 
     if (!OpenTrace())
     {
-        gDroppedSamples.fetch_add(nodes.size(), std::memory_order_relaxed);
-        for (EventNode* node : nodes)
-            ReturnNode(node);
+        gDroppedSamples.fetch_add(nodeCount, std::memory_order_relaxed);
+        for (size_t i = 0; i < nodeCount; ++i)
+            ReturnNode(nodes[i]);
         return;
     }
 
-    for (EventNode* node : nodes)
+    for (size_t i = 0; i < nodeCount; ++i)
     {
+        EventNode* node = nodes[i];
         const Event& event = node->event;
         const bool valid = ValidTemporalSample(event);
         const double position = valid
@@ -363,12 +361,12 @@ Snapshot ReadSnapshot() noexcept
     snapshot.droppedSamples = gDroppedSamples.load(std::memory_order_relaxed);
     snapshot.seenCountMask = gSeenCountMask.load(std::memory_order_relaxed);
     snapshot.seenIndexMask = gSeenIndexMask.load(std::memory_order_relaxed);
-    snapshot.lastCount = gLastCount.load(std::memory_order_relaxed);
-    snapshot.lastIndex = gLastIndex.load(std::memory_order_relaxed);
-    snapshot.lastPositionNumerator =
-        gLastPositionNumerator.load(std::memory_order_relaxed);
-    snapshot.lastPositionDenominator =
-        gLastPositionDenominator.load(std::memory_order_acquire);
+    const uint64_t sample = gLastTemporalSample.load(std::memory_order_acquire);
+    snapshot.lastCount = static_cast<int32_t>(sample >> 32);
+    snapshot.lastIndex = static_cast<int32_t>(sample & 0xffffffffu);
+    snapshot.lastPositionNumerator = static_cast<uint32_t>(snapshot.lastIndex);
+    snapshot.lastPositionDenominator = sample == 0 ? 0
+        : static_cast<uint32_t>(snapshot.lastCount + 1);
     for (size_t index = 0; index < kFirstSampleHandleCapacity; ++index)
     {
         snapshot.firstSampleCounters[index].handle =

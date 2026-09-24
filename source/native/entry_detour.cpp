@@ -30,6 +30,7 @@ constexpr size_t kForwardRelayBytes = 26;
 // five-byte hotpatch region. Five entry bytes are sufficient to detect later
 // replacement without reaching into an adjacent short function.
 constexpr size_t kVerificationBytes = 5;
+constexpr size_t kEntryValidationBytes = 6; // Longest EntryMatches signature.
 
 constexpr std::array<uint8_t, 6> kNgxCreateEntry{
     0x40, 0x53, 0x55, 0x56, 0x41, 0x56};
@@ -465,7 +466,11 @@ bool Current(const Slot& slot) noexcept
         void* branchTarget = slot.branchRelay.load(std::memory_order_acquire);
         if (!branchTarget)
             branchTarget = slot.hook.load(std::memory_order_acquire);
-        if (!entry || !branchTarget || entry[0] != 0xEB
+        if (!entry || !branchTarget
+            || !QueryExecutableImage(entry - kHotpatchPrefixBytes,
+                kHotpatchPrefixBytes + kVerificationBytes,
+                slot.owner.load(std::memory_order_acquire))
+            || entry[0] != 0xEB
             || entry[1] != 0xF9 || entry[-5] != 0xE9)
             return false;
         int32_t displacement = 0;
@@ -522,7 +527,7 @@ bool TryInstallHotpatchLocked(Slot& slot) noexcept
     HMODULE owner = slot.owner.load(std::memory_order_acquire);
     if ((reinterpret_cast<uintptr_t>(entry) & 1u) != 0
         || !QueryExecutableImage(entry - kHotpatchPrefixBytes,
-            kHotpatchPrefixBytes + kVerificationBytes, owner))
+            kHotpatchPrefixBytes + kEntryValidationBytes, owner))
     {
         SetFailure(slot, Failure::eEntryNotHotpatchable);
         return false;
@@ -534,6 +539,11 @@ bool TryInstallHotpatchLocked(Slot& slot) noexcept
         SetFailure(slot, Failure::eUnsupportedEntry);
         return false;
     }
+    // Capture the validated entry before allocation/publication. Reading the
+    // expected value immediately before CAS could overwrite a competing hook.
+    const SHORT expected = static_cast<SHORT>(
+        static_cast<uint16_t>(entry[0])
+        | (static_cast<uint16_t>(entry[1]) << 8));
     if (!HotpatchPaddingMatches(entry))
     {
         SetFailure(slot, Failure::eEntryNotHotpatchable);
@@ -600,9 +610,6 @@ bool TryInstallHotpatchLocked(Slot& slot) noexcept
     slot.failure.store(static_cast<uint32_t>(Failure::eNone),
         std::memory_order_release);
     MemoryBarrier();
-    const SHORT expected = static_cast<SHORT>(
-        static_cast<uint16_t>(entry[0])
-        | (static_cast<uint16_t>(entry[1]) << 8));
     const SHORT observed = _InterlockedCompareExchange16(
         reinterpret_cast<volatile SHORT*>(entry),
         static_cast<SHORT>(0xF9EBu), expected);
