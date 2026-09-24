@@ -30,11 +30,15 @@ The local C++ core rejects its old nonfunctional Ampere patch path and has autom
 - Read-only CUDA driver query: NVIDIA GeForce RTX 3060 Ti, compute capability 8.6, driver API version 13.4. This is not the installed GeForce driver release and is not an NGX/Frame Generation test.
 - Native build launcher returns failure before dependency changes/packaging when prerequisites are missing.
 
+## Validation on GitHub Actions
+
+The [Windows CI run for commit 5025174](https://github.com/Andr995/DLSSFremgenporting3000/actions/runs/36038599515) completed successfully on 2026-09-24. Both jobs passed: `build` compiled the full Ada targets with MSVC/MASM and ran CTest, while `ampere-package` fetched the pinned precompiled backend, tested deployment and uploaded its package. The Ampere release uses the upstream DLL, not the Ada artifacts produced by the other job.
+
 Reproduce the portable checks with `scripts/test-portable.ps1`. The local CTest results are in `build-tests/wmake/Testing/Temporary/LastTest.log` (generated, not committed).
 
 ## Not validated / remaining work
 
-- MSVC, MASM and a usable Ninja installation were unavailable in this session. The full core/ASI/ReShade DLL build and the updated GitHub Actions job have not been executed successfully here. Existing DLLs in `dist` were not rebuilt or relabelled as current.
+- MSVC, MASM and a usable Ninja installation were unavailable locally. The full core/ASI/ReShade build was subsequently verified on GitHub Actions as recorded above; old local `dist` files were not relabelled as current builds. The published Ampere archive was independently checked after ZIP extraction, and its included installer/restore entry points were exercised against a fixture.
 - The local C++ core was not exercised in a live game. The separate Ampere backend was exercised in Cyberpunk, with successful NGX feature creation and SM86 evaluation logs. General DX12/Vulkan compatibility, frame uniqueness, pacing, latency and long-run stability remain unverified.
 - The existing loader still performs substantive initialization under `DllMain`. Process-lifetime pinning prevents runtime unmapping, but loader-lock interactions and shutdown ordering still require full-core integration tests. Hot unloading is intentionally unsupported.
 - The old live-control harness assumes an external proxy loader and legacy config path. It is not evidence for the current universal build and is not run as if it were.

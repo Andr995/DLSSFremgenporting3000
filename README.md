@@ -93,7 +93,7 @@ C3934A09399F022504227C72DF0BF8C0DE55F9A08880DDDDE898C5262CEFA838
 
 ## Codice C++ e correzioni
 
-Il core C++ Ada storico è separato e non va caricato insieme al backend Ampere. Le tre correzioni di revisione riguardano durata della DLL, percorsi condivisi fra core e interfaccia e rifiuto della telemetria scaduta o di altre sessioni. I sei test locali sono passati; il core completo richiede MSVC/MASM e non è la DLL Ampere della release.
+Il core C++ Ada storico è separato e non va caricato insieme al backend Ampere. Le tre correzioni di revisione riguardano durata della DLL, percorsi condivisi fra core e interfaccia e rifiuto della telemetria scaduta o di altre sessioni. I sei test locali sono passati, così come [compilazione MSVC e test su GitHub Actions](https://github.com/Andr995/DLSSFremgenporting3000/actions/runs/36038599515). Il core completo richiede MSVC/MASM e non è la DLL Ampere della release.
 
 Istruzioni per sviluppatori: [ADA_RESEARCH.md](ADA_RESEARCH.md). Revisione tecnica: [AUDIT.md](AUDIT.md).
 
