@@ -1,104 +1,109 @@
 # NVIDIA Frame Generation su RTX 3000 — Cyberpunk 2077
 
-Pacchetto di installazione per usare **[dlssg_for_sm86 di sdli1995](https://github.com/sdli1995/dlssg_for_sm86)** con NVIDIA DLSS Frame Generation sulle GPU Ampere SM 8.6. La verifica locale è stata eseguita su **RTX 3060 Ti** in Cyberpunk 2077. La generazione usa il runtime NVIDIA DLSS-G; FSR non è il backend di questo pacchetto.
+Integrazione sperimentale di **[dlssg_for_sm86 di sdli1995](https://github.com/sdli1995/dlssg_for_sm86)** per GPU Ampere SM86. Usa il runtime NVIDIA DLSS-G, non FSR. Integrazione, documentazione e prove locali: **nikecatania95/Andr995**.
 
-**La DLL Ampere è già compilata.** La release contiene `version.dll`, configurazione e script di installazione/ripristino. Non servono Visual Studio o CUDA Toolkit. La DLL è distribuita dall'autore del backend, non è una compilazione del vecchio core C++ di questo repository.
+**Aggiornamento 0.3.5-cp2077.2 — 30 settembre 2026:** risolto nell'installer e nel pacchetto CET il conflitto sul file version.dll. Aggiunti archivi separati, migrazione documentata e diagnosi HAGS/loader/configurazione. Il backend upstream resta 0.3.5: la DLL è già compilata e non è stata modificata o ricompilata qui.
 
-> Mod sperimentale della comunità. Le prove confermano l'esecuzione su RTX 3060 Ti; non garantiscono compatibilità con ogni RTX 3000, gioco o driver, né supporto ufficiale NVIDIA.
+## Scegliere il download
 
-## Download
+[Releases](https://github.com/Andr995/DLSSFremgenporting3000/releases) · [Nexus](https://www.nexusmods.com/cyberpunk2077/mods/34477)
 
-Scarica **`NVIDIA-FG-RTX3000-Cyberpunk-0.3.5.zip`** dalla [pagina Releases](https://github.com/Andr995/DLSSFremgenporting3000/releases) ed estrailo in una cartella dedicata. Gli archivi automatici “Source code” richiedono invece il passaggio di preparazione descritto sotto. Se il repository è privato, serve un account autorizzato anche per scaricare le release.
+| Pacchetto | Quando usarlo | File attivi |
+| --- | --- | --- |
+| CET-ASI (principale) | CET funzionante o un ASI loader compatibile già installato | bin/x64/plugins/dlssg_sm86.asi e dlssg_sm86.ini |
+| Standalone (alternativa) | Senza CET e senza un altro version.dll | bin/x64/version.dll e dlssg_sm86.ini |
+| Tools | Installazione assistita, backup/ripristino e diagnosi | L'installer sceglie ASI oppure Standalone |
 
-## Installazione della release già compilata
+**Installa una sola variante.** Il pacchetto CET-ASI non include CET: installalo dalla [release ufficiale](https://github.com/maximegmd/CyberEngineTweaks/releases) compatibile con la tua versione del gioco. Non mettere i file FG nella sottocartella plugins/cyber_engine_tweaks. Non rinominare la DLL in altri proxy a caso.
 
-1. **Chiudi completamente Cyberpunk 2077.**
-2. Individua `Cyberpunk2077.exe`, normalmente in `Cyberpunk 2077\bin\x64`. La cartella di GOG Galaxy contiene il launcher e può essere diversa.
-3. Apri PowerShell nella cartella estratta ed esegui, sostituendo il percorso del gioco:
+## Aggiornamento dalla prima versione, con CET
 
-   ```powershell
-   .\scripts\install-ampere.ps1 -Package . -GameExecutable 'D:\Giochi\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe'
-   ```
+1. Chiudi Cyberpunk. Conserva fuori dal gioco una copia dei file FG attuali e della configurazione.
+2. Se il vecchio pacchetto FG ha sostituito bin/x64/version.dll, ripristina il **version.dll originale di CET**, dal tuo backup oppure reinstallando CET da fonte ufficiale. Non cancellare alla cieca questo file: può appartenere a un'altra mod.
+3. Rimuovi dal percorso attivo soltanto il precedente backend FG e il relativo INI; conserva i backup. Il suo SHA-256 è riportato sotto.
+4. Estrai **CET-ASI** nella cartella del gioco che contiene bin. I due file FG devono risultare direttamente in **bin/x64/plugins**. Il version.dll di CET deve rimanere in bin/x64.
+5. In Windows, verifica **Pianificazione GPU con accelerazione hardware (HAGS)** nelle impostazioni grafiche. Se la abiliti, riavvia Windows.
+6. Avvia il gioco, scegli **DLSS Frame Generation**, applica e riavvia il gioco quando richiesto. Inizia da **2×**; mantieni Reflex attivo. Prova 3×/4× solo successivamente.
 
-4. Conserva il percorso `restore.json` stampato: serve per annullare questa installazione.
-5. Avvia il gioco e seleziona **Impostazioni → Grafica → Generazione fotogrammi → DLSS Frame Generation**. Applica, esci normalmente e **riavvia il gioco** quando richiesto.
-6. Inizia con **2×**, mantieni NVIDIA Reflex attivo ed esegui il benchmark. Poi puoi provare **3× o 4×**.
+La verifica dei file del gioco può ripristinare file originali, ma non è una procedura affidabile per rimuovere DLL aggiunte dalle mod. Non ripristinare indiscriminatamente un intero vecchio backup se contiene bridge FSR concorrenti.
 
-Lo script verifica revisione e hash prima di installare `version.dll` e `dlssg_sm86.ini`. Sposta in `.rtx30fg-backup-<id>` i file concorrenti riconosciuti: un precedente `version.dll`/INI, `nvngx.dll`, `dlssg_to_fsr3_amd_is_better.dll` e i tre componenti `RTX40MFG`. Conserva ReShade e i runtime originali `nvngx_dlss*.dll`. Gestisce soltanto Cyberpunk; altre mod che usano questi proxy richiedono una verifica separata.
+## Installazione assistita
 
-Se la cartella del gioco richiede privilegi amministrativi, apri PowerShell come amministratore. Se gli script scaricati sono bloccati, dopo aver verificato origine e hash puoi eseguire il solo comando in una sessione temporanea:
+Dallo ZIP Tools estratto in una cartella separata:
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-ampere.ps1 -Package . -GameExecutable 'D:\Giochi\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe'
-```
+~~~powershell
+.\scripts\install-ampere.ps1 -Package . -GameExecutable 'D:\Giochi\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe'
+~~~
 
-### Installazione manuale
+Auto preferisce ASI quando trova un loader riconosciuto o la struttura standard di CET. Puoi specificare -Mode ASI o -Mode Standalone. Se CET è danneggiato, riparalo prima: lo script si ferma invece di sovrascrivere un loader sconosciuto.
 
-A gioco chiuso, conserva una copia degli originali e sposta fuori da `bin\x64` le mod concorrenti elencate sopra. Copia **`version.dll` e `dlssg_sm86.ini`** dalla release accanto all'eseguibile, poi seleziona DLSS Frame Generation e riavvia. Questa procedura richiede anche un ripristino manuale; lo script è preferibile perché registra e verifica il backup.
+L'installer verifica hash e revisione, conserva gli originali in .rtx30fg-backup-ID e stampa restore.json. In modalità ASI può spostare il precedente backend root riconosciuto, evitando il doppio caricamento. Conserva il loader CET, ReShade e i runtime originali nvngx_dlss*.dll. Mette in backup i concorrenti nvngx.dll, dlssg_to_fsr3_amd_is_better.dll e i tre componenti RTX40MFG storici. La configurazione distribuita sostituisce quella precedente, conservata nel backup.
 
-## Risultati verificati
+~~~powershell
+.\scripts\restore-ampere.ps1 -Manifest 'D:\Giochi\Cyberpunk 2077\bin\x64\.rtx30fg-backup-ID\restore.json'
+~~~
 
-RTX 3060 Ti, Ryzen 5 5600X, driver 616.56, Cyberpunk **2.3**, 1920×1080, DLSS Qualità con modello Transformer, Ray Reconstruction e ray tracing attivi, illuminazione Folle, path tracing disattivato. Le impostazioni riportate dai tre rapporti coincidono, salvo FG e misure del benchmark.
+Il ripristino supporta anche i manifest della prima versione. Verifica tutti gli hash prima di agire, rifiuta percorsi collegati tramite junction/symlink e si ferma se qualcuno ha modificato file da preservare. Le impostazioni del menu grafico si gestiscono separatamente. Per un'installazione manuale, rimuovi solo i file della variante installata e ripristina il tuo backup; non eliminare il loader o le cartelle CET.
+
+## Diagnosi se FG non compare o CET non parte
+
+Nel pacchetto Tools:
+
+~~~powershell
+.\scripts\diagnose-ampere.ps1 -GameExecutable 'D:\Giochi\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe' -OutputPath '.\fg-diagnostic.json'
+~~~
+
+Negli archivi Nexus lo stesso script è in NVIDIA-FG-RTX3000-Docs/tools. Il rapporto controlla loader, hash, doppio backend, posizione dell'INI, bridge concorrenti, GPU/driver, configurazione HAGS e campioni degli ultimi log. Non cambia registro, driver o impostazioni del gioco. HAGS non rilevabile è riportato come Unknown, non come disattivato; ConfiguredOn non dimostra che un riavvio pendente sia già avvenuto. Il rapporto evita percorsi assoluti personali, salvataggi e log grezzi; rileggilo prima di condividerlo.
+
+Il caso **RTX 3070m con voce FG assente non è ancora risolto con evidenza**. Servono versione del gioco/driver, percorso di caricamento, HAGS dopo riavvio e rapporto della sessione interessata. Questi controlli correggono errori di installazione comuni, non promettono compatibilità universale.
+
+Log con ASI: bin/x64/plugins/dlssg_sm86/logs. Log Standalone: bin/x64/dlssg_sm86/logs. La posizione cambia se modifichi Logging.Directory. Confronta PID e orario della tua sessione: una vecchia valutazione riuscita non certifica una nuova installazione.
+
+## Configurazione e risultati
+
+La configurazione resta Optimized=0, MaxGeneratedFrames=3, massimo 4×, log di livello 3. Il limite INI non imposta il moltiplicatore del menu. Non forzare 6× con questa integrazione Streamline. Il valore del menu salvato dal gioco è DLSS, non DLSSG.
+
+Dati del **24 settembre 2026**, RTX 3060 Ti, Ryzen 5 5600X, driver 616.56, Cyberpunk **2.3**, 1920×1080, DLSS Qualità Transformer, Ray Reconstruction e ray tracing attivi, illuminazione Folle, path tracing disattivato:
 
 | Modalità | FPS medi | Minimo | Massimo |
 | --- | ---: | ---: | ---: |
 | FG disattivato | 44,96 | 40,19 | 49,24 |
-| NVIDIA DLSS FG 2× | 77,33 | 60,63 | 88,02 |
-| NVIDIA DLSS FG 4× | 120,01 | 32,58 | 138,84 |
+| NVIDIA FG 2× | 77,33 | 60,63 | 88,02 |
+| NVIDIA FG 4× | 120,01 | 32,58 | 138,84 |
 
-Guadagno medio: circa **+72% a 2×** e **+167% a 4×**. Il minimo della prova 4× mostra un calo: la media non certifica fluidità costante. Sono FPS riportati dal gioco, non misure indipendenti di latenza o unicità dei frame presentati; il minimo non equivale al valore 1% low.
+Una prova separata su 2.31 riporta 114,71 FPS medi a 4×. Sono valori del benchmark del gioco, non misure di latenza, unicità dei frame o 1% low. Non sono nuovi risultati dell'aggiornamento CET. I log corrispondenti attestano valutazioni sul dispositivo SM86 con kernel cubin_sm86. Menu sbloccato e contatore FPS, da soli, non sono una verifica sufficiente.
 
-I log della sessione corrispondente registrano creazione riuscita della feature DLSS-G, kernel `cubin_sm86`, valutazioni riuscite e zero errori di lancio nei campioni. Una prova successiva su **2.31** riporta 114,71 FPS medi a 4× ed è documentata separatamente perché cambia la versione del gioco.
+[Verifica locale](VALIDAZIONE_CYBERPUNK.md) · [Dati benchmark](evidence/cyberpunk-benchmarks.json) · [Guida estesa](TUTORIAL_RTX3000.md) · [Changelog](CHANGELOG.md)
 
-Dettagli e dati: [verifica locale](VALIDAZIONE_CYBERPUNK.md), [rapporti benchmark](evidence/cyberpunk-benchmarks.json), [riepilogo dei log](evidence/cyberpunk-backend-summary.json).
+## Preparazione e test
 
-## Configurazione e problemi comuni
-
-- `Optimized=0`: percorso numerico stock del backend Ampere, usato nelle prove iniziali.
-- `MaxGeneratedFrames=3`: limite richiesto fino a tre frame aggiuntivi, cioè 4×. Seleziona il moltiplicatore nel gioco e verifica quello effettivo nei log.
-- Log: `bin\x64\dlssg_sm86\logs\loader_<PID>.jsonl` e `backend_<PID>.jsonl`.
-- Il menu sbloccato o una riga `install` non provano l'esecuzione. Cerca anche una creazione riuscita della feature ID 11 e successive righe `evaluate` riuscite sul dispositivo SM86.
-- Se il benchmark indica **“Generazione fotogrammi: No”**, seleziona DLSS dal menu, applica ed esci normalmente prima del riavvio. Il valore salvato da questa versione del gioco è `DLSS`, non `DLSSG`.
-- Per questa integrazione usa **2×–4×**. Non forzare 6× con il vecchio plugin Streamline del gioco.
-
-Guida estesa: [TUTORIAL_RTX3000.md](TUTORIAL_RTX3000.md).
-
-## Ripristino
-
-Chiudi il gioco, poi dalla cartella della release esegui usando il manifest stampato dalla tua installazione:
-
-```powershell
-.\scripts\restore-ampere.ps1 -Manifest 'D:\Giochi\Cyberpunk 2077\bin\x64\.rtx30fg-backup-INSERISCI_ID\restore.json'
-```
-
-Il ripristino controlla gli hash e conserva anche i file rimossi. Se hai modificato l'INI o il backup, si ferma per non sovrascrivere i cambiamenti. Le impostazioni grafiche si gestiscono separatamente dal menu del gioco.
-
-## Preparare il pacchetto dal repository
-
-Apri PowerShell nella cartella clonata o estratta dai sorgenti:
-
-```powershell
+~~~powershell
 $pacchetto = .\scripts\prepare-ampere.ps1
 .\tests\ampere_deployment_tests.ps1 -Package $pacchetto
-.\scripts\install-ampere.ps1 -Package $pacchetto -GameExecutable 'D:\Giochi\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe'
-```
+.\scripts\package-nexus.ps1 -Package $pacchetto -Variant CET-ASI
+.\scripts\package-nexus.ps1 -Package $pacchetto -Variant Standalone
+~~~
 
-`prepare-ampere.ps1` scarica la **DLL già compilata** dalla revisione fissata dell'autore, verifica dimensione e SHA-256 e prepara una nuova directory in `dist`. Richiede Internet al primo download, non un compilatore. I test usano file fittizi e vanno eseguiti a gioco chiuso.
+La preparazione scarica il backend precompilato dalla revisione fissata e verifica SHA-256/dimensione. I test usano file fittizi, da eseguire a gioco chiuso. Per creare localmente ZIP e RAR servono 7-Zip e WinRAR (percorsi configurabili); non servono per installare o usare il backend.
 
-Backend **0.3.5**, commit `9621db573e07ed54f50c15bbb585ed9a7bdfac28`. SHA-256 di `version.dll`:
+Backend 0.3.5, commit 9621db573e07ed54f50c15bbb585ed9a7bdfac28. SHA-256 identico per version.dll e dlssg_sm86.asi:
 
-```text
+~~~text
 C3934A09399F022504227C72DF0BF8C0DE55F9A08880DDDDE898C5262CEFA838
-```
-
-## Codice C++ e correzioni
-
-Il core C++ Ada storico è separato e non va caricato insieme al backend Ampere. Le tre correzioni di revisione riguardano durata della DLL, percorsi condivisi fra core e interfaccia e rifiuto della telemetria scaduta o di altre sessioni. I sei test locali sono passati, così come [compilazione MSVC e test su GitHub Actions](https://github.com/Andr995/DLSSFremgenporting3000/actions/runs/36038599515). Il core completo richiede MSVC/MASM e non è la DLL Ampere della release.
-
-Istruzioni per sviluppatori: [ADA_RESEARCH.md](ADA_RESEARCH.md). Revisione tecnica: [AUDIT.md](AUDIT.md).
+~~~
 
 ## Provenienza e licenze
 
-Il codice originario conserva la [licenza MIT](LICENSE). Il backend esterno è di **sdli1995**, che dichiara GPLv3 per il proprio codice. Runtime NVIDIA, modelli e kernel di terze parti mantengono le rispettive condizioni e non sono rilicenziati dalla MIT di questo repository. Il pacchetto conserva integralmente `THIRD_PARTY_NOTICES.txt` dell'autore e [BACKEND_PROVENANCE.md](BACKEND_PROVENANCE.md).
+Il backend è di **sdli1995**, che dichiara GPLv3 per il proprio codice. I binari e la documentazione consultati non includono tutti i sorgenti necessari a ricostruirlo. Il backend incorpora asset NVIDIA soggetti alle rispettive condizioni; la licenza MIT dell'integrazione non li rilicenzia. Conserviamo integralmente THIRD_PARTY_NOTICES.txt. L'hash identifica il file, non certifica sicurezza o diritti di redistribuzione. La firma è autofirmata dall'autore, non NVIDIA. [Provenienza completa](BACKEND_PROVENANCE.md).
 
-La revisione upstream consultata pubblica binari e documentazione, ma non tutti i sorgenti necessari a ricostruire la DLL. L'hash identifica il file e non equivale a un audit completo. La firma del backend è autofirmata dall'autore, non è una firma NVIDIA.
+Il codice C++ storico deriva dal progetto RTX40MFG di **Michael Robles / dashdogy**, con [licenza MIT](LICENSE); è separato dalla DLL Ampere e non va caricato insieme. I precedenti sei test C++ e la compilazione MSVC sono documentati in [ADA_RESEARCH.md](ADA_RESEARCH.md) e [AUDIT.md](AUDIT.md). Non presentiamo quel core come implementazione della generazione Ampere.
+
+Grazie a nicklasz e dak002 per il percorso ASI e la verifica riportata su Nexus, e a R92CP, abdyys, protossvoid, VexelleValeux, MRklava0000, Ganzlinger e bigairboi1 per segnalazioni e discussione. Le segnalazioni della comunità sono distinte dalle nostre prove locali.
+
+### Verifica CET e cambio impostazioni
+CET 1.37.1 e NVIDIA FG sono stati eseguiti insieme sulla RTX 3060 Ti: 19.296
+valutazioni, 172 campioni riusciti e uscita regolare. I due benchmark della
+sessione usano impostazioni diverse (119,69 e 45,02 FPS medi) e non costituiscono
+un confronto A/B. Riavvia il gioco dopo aver cambiato impostazioni grafiche e
+controlla i log della nuova sessione. Non è stata determinata la causa del secondo
+risultato basso; il dettaglio è conservato nel rapporto di verifica CET.

@@ -41,18 +41,18 @@ CacheDirectory=
 '@ | Set-Content -LiteralPath (Join-Path $package 'dlssg_sm86.ini') -Encoding ASCII
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ampere-backend.lock.json') -Destination $package
 foreach ($document in @('README.md', 'TUTORIAL_RTX3000.md', 'VALIDAZIONE_CYBERPUNK.md',
-                        'BACKEND_PROVENANCE.md', 'ADA_RESEARCH.md', 'AUDIT.md', 'LICENSE')) {
+                        'BACKEND_PROVENANCE.md', 'ADA_RESEARCH.md', 'AUDIT.md', 'CHANGELOG.md', 'LICENSE')) {
     Copy-Item -LiteralPath (Join-Path $repo $document) -Destination $package
 }
 $packageScripts = Join-Path $package 'scripts'
 New-Item -ItemType Directory -Path $packageScripts | Out-Null
 foreach ($script in @('install-ampere.ps1', 'restore-ampere.ps1', 'AmpereDeployment.psm1',
-                     'ampere-backend.lock.json')) {
+                     'ampere-backend.lock.json', 'diagnose-ampere.ps1')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $packageScripts
 }
 $packageEvidence = Join-Path $package 'evidence'
 New-Item -ItemType Directory -Path $packageEvidence | Out-Null
-foreach ($report in @('cyberpunk-benchmarks.json', 'cyberpunk-backend-summary.json')) {
+foreach ($report in @('cyberpunk-benchmarks.json', 'cyberpunk-backend-summary.json', 'cyberpunk-cet-asi-validation.json')) {
     Copy-Item -LiteralPath (Join-Path $repo ('evidence/' + $report)) -Destination $packageEvidence
 }
 $files = foreach ($name in @('version.dll', 'dlssg_sm86.ini', 'THIRD_PARTY_NOTICES.txt')) {
@@ -60,6 +60,7 @@ $files = foreach ($name in @('version.dll', 'dlssg_sm86.ini', 'THIRD_PARTY_NOTIC
 }
 [PSCustomObject]@{
     schema = 1; backend = $lock.name; version = $lock.version; commit = $lock.commit
+    integrationVersion = '0.3.5-cp2077.2'
     runtime = 'NVIDIA DLSS-G 310.9.1'; configuration = 'stock numerics; maximum 4x; diagnostic logging'
     validation = 'package integrity only; game execution must be verified separately'
     files = @($files)

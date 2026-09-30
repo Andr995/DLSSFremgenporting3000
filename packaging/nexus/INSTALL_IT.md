@@ -63,9 +63,10 @@ Log ASI: bin/x64/plugins/dlssg_sm86/logs. Log Standalone: bin/x64/dlssg_sm86/log
 Una voce di menu sbloccata non dimostra esecuzione. Nei log servono creazione riuscita della feature DLSS-G e valutazioni successive riuscite su SM86. I campioni non misurano direttamente latenza, frame unici o stabilità di tutte le scene. Il caso RTX 3070m richiede ancora dati dell'utente; HAGS è un controllo suggerito, non una soluzione confermata per quella scheda.
 
 ## Dati e attribuzioni
-Le prove del 24 settembre sono conservate in VALIDAZIONE_CYBERPUNK.md ed evidence; non sono nuove misure dell'aggiornamento CET. [README](README.md) e [CHANGELOG](CHANGELOG.md) distinguono le correzioni dai limiti ancora aperti.
+Le prove del 24 settembre sono conservate in VALIDAZIONE_CYBERPUNK.md ed evidence; non sono nuove misure dell'aggiornamento CET. [README](../README_NVIDIA_FG_RTX3000.txt) e [CHANGELOG](CHANGELOG.md) distinguono le correzioni dai limiti ancora aperti.
 
 Integrazione: nikecatania95/Andr995. Backend: sdli1995/dlssg_for_sm86 0.3.5. Runtime, modelli e kernel NVIDIA conservano le rispettive condizioni. Vedi BACKEND_PROVENANCE.md e THIRD_PARTY_NOTICES.txt.
+
 
 ### Verifica CET e cambio impostazioni
 CET 1.37.1 e NVIDIA FG sono stati eseguiti insieme sulla RTX 3060 Ti: 19.296

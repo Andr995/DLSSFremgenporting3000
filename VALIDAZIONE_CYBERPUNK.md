@@ -66,3 +66,34 @@ Due altre prove del giorno sono escluse dal confronto: quella delle 18:25 usa pa
 ## Valutazione
 
 L'attivazione e l'esecuzione NVIDIA su questa RTX 3060 Ti sono confermate. Il 2× porta la media a circa 77 FPS; il 4× arriva a circa 120 FPS nella prova 2.3, ma registra un minimo inferiore alla base. Non si deducono da questi numeri assenza di stutter, frame tutti unici o una latenza equivalente a rendering nativo a 120 FPS. Servono analisi del frame pacing, osservazione in movimento e sessioni più lunghe per giudicare questi aspetti.
+
+## Verifica CET/ASI — 30 settembre 2026
+
+La sessione PID 6884 ha caricato insieme CET 1.37.1 e il backend rinominato
+dlssg_sm86.asi, con INI direttamente in bin/x64/plugins. Il loader originale
+version.dll di CET è rimasto nella cartella bin/x64. Sono stati osservati
+l'overlay iniziale CET e la sua inizializzazione D3D12 riuscita.
+
+Il log completo della sessione attesta una creazione DLSS-G riuscita, HAGS
+effettivamente attivo, SM86/cubin_sm86, 19.296 valutazioni totali e 172 campioni
+tutti con status=1 e tre frame generati richiesti. I contatori di errori di lancio
+e fallback nei campioni sono zero; l'uscita è regolare.
+
+Durante la sessione l'utente ha eseguito due benchmark: 119,69 e 45,02 FPS medi.
+Fra i due cambiano modalità DLSS, ray tracing, path tracing e Ray Reconstruction:
+non sono una coppia A/B e non dimostrano un miglioramento o una regressione
+causati da CET. Il secondo risultato basso resta documentato; non è stato
+eseguito un confronto controllato dopo riavvio per determinarne la causa.
+Riavviare il gioco dopo cambi delle impostazioni grafiche e verificare la
+sessione corrente evita di scambiare una vecchia esecuzione riuscita per una
+conferma della nuova configurazione.
+
+[Dati e hash della verifica CET](evidence/cyberpunk-cet-asi-validation.json).
+Questa prova conferma inizializzazione CET ed esecuzione FG nella stessa sessione,
+non ogni mod dipendente da CET, ogni preset o ogni RTX 30. Il caso RTX 3070m
+segnalato su Nexus resta non verificato.
+
+Al termine, i file aggiunti per la prova CET sono stati conservati nel backup
+locale e la precedente installazione locale del backend è stata ripristinata.
+I pacchetti cp2077.2 mantengono la DLL upstream invariata e cambiano il metodo
+di distribuzione/installazione.

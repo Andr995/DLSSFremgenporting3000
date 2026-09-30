@@ -27,6 +27,11 @@ jobs:
           name: NVIDIA-FG-RTX3000-Cyberpunk
           path: ${{ steps.package.outputs.directory }}/*
           if-no-files-found: error
+      - name: Verify Windows PowerShell 5.1 deployment compatibility
+        shell: powershell
+        env:
+          AMPERE_PACKAGE: ${{ steps.package.outputs.directory }}
+        run: ./tests/ampere_deployment_tests.ps1 -Package $env:AMPERE_PACKAGE
   build:
     runs-on: windows-2022
     steps:

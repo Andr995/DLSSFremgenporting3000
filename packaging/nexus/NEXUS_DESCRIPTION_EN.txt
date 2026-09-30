@@ -1,0 +1,66 @@
+[center][size=5][b]RTX 30 Series NVIDIA Frame Generation — Experimental[/b][/size]
+Integration by nikecatania95/Andr995
+[url=https://github.com/Andr995/DLSSFremgenporting3000]GitHub: source, scripts and documentation[/url][/center]
+
+[b]Update 0.3.5-cp2077.2: CET-compatible installation[/b]
+The main package now loads Frame Generation as an ASI plugin and preserves Cyber Engine Tweaks' original version.dll. There is a separate Standalone download for installations without CET. The upstream backend remains version 0.3.5; this is an integration and packaging update, not a new NVIDIA model or driver.
+
+[b]What this mod does[/b]
+Experimental Cyberpunk 2077 integration of [url=https://github.com/sdli1995/dlssg_for_sm86]dlssg_for_sm86 by sdli1995[/url], using an adapted NVIDIA DLSS-G runtime on Ampere SM86. It does not replace NVIDIA Frame Generation with FSR. Local evidence concerns an RTX 3060 Ti; compatibility with every RTX 30-series card, driver or game build is not established.
+
+[b]Choose ONE download[/b]
+[list]
+[*][b]CET-ASI — main file:[/b] requires working Cyber Engine Tweaks or a compatible ASI loader. CET is not included.
+[*][b]Standalone — alternative:[/b] for installations without CET and without another version.dll.
+[/list]
+Do not install both variants.
+
+[b]CET-ASI installation and migration from the old release[/b]
+[list=1]
+[*]Close the game and back up existing mod files/configuration outside the game folder.
+[*]Install a compatible version of [url=https://github.com/maximegmd/CyberEngineTweaks/releases]Cyber Engine Tweaks from its official release[/url].
+[*]If the previous FG package replaced bin\x64\version.dll, restore CET's original loader from your backup or reinstall CET. Identify old FG files before removing them; another mod can use the same filename.
+[*]Move the previous FG backend and root INI out of the active bin\x64 folder. Preserve backups and do not restore competing FSR bridge files.
+[*]Extract the CET-ASI archive into the game folder containing bin. Both dlssg_sm86.asi and dlssg_sm86.ini must be directly in [b]bin\x64\plugins[/b], not inside plugins\cyber_engine_tweaks. Keep CET's original bin\x64\version.dll.
+[*]Check [b]Hardware-accelerated GPU scheduling (HAGS)[/b] in Windows graphics settings. Restart Windows if you enable it.
+[*]Select DLSS Frame Generation in the game, apply and restart when requested. Start at 2x with Reflex enabled; test 3x/4x separately.
+[/list]
+
+[b]Standalone installation[/b]
+Only use this variant without CET or a conflicting version.dll. Back up originals, close the game, then extract into the game folder containing bin. It installs version.dll and dlssg_sm86.ini beside Cyberpunk2077.exe in bin\x64. Do not leave an ASI backend active at the same time.
+
+[b]Troubleshooting and requirements[/b]
+Windows x64, a compatible NVIDIA driver, an Ampere SM86 GPU and a game build providing DLSS Frame Generation are required. Keep competing FG/NGX bridge mods disabled. Preserve the game's original NVIDIA runtimes. Keep the included configuration beside the backend. The configuration uses Optimized=0 and supports requests up to 4x; do not force 6x with this integration.
+
+The included [b]NVIDIA-FG-RTX3000-Docs\tools\diagnose-ampere.ps1[/b] checks loader placement, duplicate backends, INI, GPU/driver, HAGS configuration and recent log samples. See the included README for the command. It does not alter the registry, driver or game settings. Read the resulting report before sharing it.
+
+ASI logs: bin\x64\plugins\dlssg_sm86\logs
+Standalone logs: bin\x64\dlssg_sm86\logs
+Match the time and PID of your test. A menu toggle or FPS counter alone is insufficient proof of actual frame generation.
+
+[b]The RTX 3070m report is still unverified.[/b] HAGS was suggested in the comments; we do not have confirmation from the affected user. Please provide exact GPU, game/driver versions and a diagnostic report from the failing session.
+
+[b]Results and limits[/b]
+Historical tests from 24 September 2026 on RTX 3060 Ti / Ryzen 5 5600X / driver 616.56 / Cyberpunk 2.3 at 1080p, DLSS Quality, RT Psycho and no path tracing reported:
+[list]
+[*]FG off: 44.96 average FPS.
+[*]NVIDIA FG 2x: 77.33 average FPS.
+[*]NVIDIA FG 4x: 120.01 average FPS, with a 32.58 minimum.
+[/list]
+These are game-reported single-run results, not latency, frame-uniqueness or 1% low measurements. They are not new benchmarks of the CET update. Full evidence and a separate 2.31 result are included. This remains experimental, with no official NVIDIA RTX 30-series support or universal stability guarantee.
+
+[b]CET/ASI verification — 30 September 2026[/b]
+CET 1.37.1 and FG executed together on RTX 3060 Ti / Cyberpunk 2.31: 19,296 evaluations, 172 successful samples, zero sampled launch errors/fallbacks and clean exit. Two runs using different DLSS/RT/path tracing/Ray Reconstruction settings reported 119.69 and 45.02 FPS; they are not an A/B comparison and do not establish a performance gain caused by this update. Restart after graphics-setting changes and verify the current session. Full reports are included.
+
+[b]Uninstall[/b]
+Close the game and remove only the two FG files of the installed variant. Restore your backups if needed. Do not delete CET's loader/files or the entire plugins folder. Users of the separate Tools installer should restore with its saved restore.json manifest. Manual installation is documented; Vortex installation is untested.
+
+[b]Credits and provenance[/b]
+[list]
+[*]sdli1995 — dlssg_for_sm86 backend, distributed as an unchanged precompiled binary.
+[*]NVIDIA — original DLSS technology and runtime/model/kernel assets, retaining their respective terms.
+[*]nikecatania95/Andr995 — Cyberpunk integration, packaging, documentation and local validation.
+[*]Michael Robles / dashdogy — original MIT-licensed RTX40MFG C++ research lineage; separate from the Ampere backend used here.
+[*]nicklasz and dak002 — ASI placement guidance and reported CET workaround confirmation; thanks to all users who reported issues.
+[/list]
+See the included THIRD_PARTY_NOTICES.txt and BACKEND_PROVENANCE.md. This integration's license does not relicense third-party assets.
